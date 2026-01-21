@@ -6,8 +6,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Space Grotesk', 'sans-serif'],
+        sans: ['"Encode Sans"', 'sans-serif'],
+        body: ['"Encode Sans"', 'sans-serif'],
+        headline: ['"Encode Sans Condensed"', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {
