@@ -8,7 +8,6 @@ import { MilestoneDetail } from '@/components/milestone-detail';
 import { type Milestone, type Category, type AssociatedFile } from '@/types';
 import { CATEGORIES } from '@/lib/data';
 import { toast } from '@/hooks/use-toast';
-import { autoTagFiles } from '@/ai/flows/auto-tag-files';
 import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -56,45 +55,6 @@ export default function Home() {
   const [timelinePanelHeight, setTimelinePanelHeight] = React.useState(40); // Initial percentage
   const resizeContainerRef = React.useRef<HTMLDivElement>(null);
   const milestoneDateBounds = React.useRef<{start: string; end: string} | null>(null);
-
-  const runAITagging = async (milestonesToTag: Milestone[]) => {
-    const taggingPayload = milestonesToTag
-      .filter(m => m.name)
-      .map(m => ({
-        id: m.id,
-        textToAnalyze: `${m.name} ${m.description}`,
-      }));
-  
-    if (taggingPayload.length === 0) {
-      return;
-    }
-  
-    try {
-      const results = await autoTagFiles(taggingPayload);
-      
-      const tagsMap = new Map(results.map(r => [r.id, r.tags]));
-  
-      setMilestones(prev =>
-        prev.map(m => {
-          if (tagsMap.has(m.id)) {
-            return { ...m, tags: tagsMap.get(m.id) ?? [] };
-          }
-          if (taggingPayload.some(p => p.id === m.id)) {
-            return { ...m, tags: [] };
-          }
-          return m;
-        })
-      );
-    } catch (error) {
-      console.error('AI batch tagging failed:', error);
-      const processedIds = new Set(taggingPayload.map(p => p.id));
-      setMilestones(prev =>
-        prev.map(m =>
-          processedIds.has(m.id) ? { ...m, tags: [] } : m
-        )
-      );
-    }
-  };
 
   // Load state from localStorage on initial mount
   React.useEffect(() => {
@@ -214,14 +174,12 @@ export default function Home() {
           return {
             ...m,
             category: freshCategory,
+            tags: ['hito-ejemplo'],
           };
         });
         
         setMilestones(milestonesWithCategory);
         
-        // Run AI tagging in the background
-        runAITagging(milestonesWithCategory);
-
         setIsLoadingTimeline(false);
         return;
     }
@@ -269,7 +227,7 @@ export default function Home() {
                 description: `Archivo adjuntado a la tarjeta de Trello el ${new Date(att.date).toLocaleDateString()}.`,
                 occurredAt: att.date,
                 category: defaultCategory,
-                tags: null,
+                tags: ['adjunto'],
                 associatedFiles: [associatedFile],
                 isImportant: false,
                 history: [creationLog],
@@ -278,8 +236,6 @@ export default function Home() {
         
         const allMilestones = [creationMilestone, ...attachmentMilestones];
         setMilestones(allMilestones);
-        
-        runAITagging(attachmentMilestones);
 
     } catch(error) {
         console.error("Failed to process card attachments:", error);
@@ -333,7 +289,7 @@ export default function Home() {
         description: description,
         occurredAt: occurredAt.toISOString(),
         category: category,
-        tags: null, // Start with null to show loading spinner
+        tags: ['manual'], // Start with null to show loading spinner
         associatedFiles: associatedFiles,
         isImportant: false,
         history: [creationLog],
@@ -345,29 +301,6 @@ export default function Home() {
         title: "Hito creado",
         description: "El nuevo hito ha sido añadido a la línea de tiempo.",
     });
-
-    // Run AI tagging in the background
-    try {
-        const payload = [{
-            id: newMilestone.id,
-            textToAnalyze: `${name} ${description}`
-        }];
-        const results = await autoTagFiles(payload);
-        const newTags = results.find(r => r.id === newMilestone.id)?.tags ?? [];
-
-        setMilestones(prev =>
-          prev.map(m =>
-            m.id === newMilestone.id ? { ...m, tags: newTags } : m
-          )
-        );
-    } catch (error) {
-        console.error('AI tagging failed:', error);
-        setMilestones(prev =>
-          prev.map(m =>
-            m.id === newMilestone.id ? { ...m, tags: [] } : m // Set to empty array to stop spinner
-          )
-        );
-    }
   }, [categories]);
 
 
