@@ -39,7 +39,6 @@ const trelloSummaryFlow = ai.defineFlow(
 
     const {output} = await ai.generate({
         prompt,
-        model: 'googleai/gemini-2.0-flash',
         tools: [getTrelloBoardSummaryTool],
     });
 
