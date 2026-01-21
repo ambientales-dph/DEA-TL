@@ -7,8 +7,6 @@ import {
     TooltipProvider,
     TooltipTrigger,
   } from '@/components/ui/tooltip';
-import { AuthButton } from './auth-button';
-import { useAuth } from '@/context/auth-context';
 
 interface HeaderProps {
   searchTerm: string;
@@ -23,7 +21,6 @@ interface HeaderProps {
 }
 
 export function Header({ searchTerm, setSearchTerm, onSetRange, onToggleView, view, onGoHome, trelloCardUrl, isProjectLoaded, onToggleTrelloSummary }: HeaderProps) {
-  const { user } = useAuth();
   
   return (
     <header className="flex h-16 items-center border-b bg-card px-4 md:px-6 w-full shrink-0 gap-4 no-print">
@@ -78,11 +75,11 @@ export function Header({ searchTerm, setSearchTerm, onSetRange, onToggleView, vi
                            href={trelloCardUrl ?? undefined}
                            target="_blank"
                            rel="noopener noreferrer"
-                           aria-disabled={!trelloCardUrl || !user}
-                           tabIndex={!trelloCardUrl || !user ? -1 : undefined}
-                           className={!trelloCardUrl || !user ? 'pointer-events-none' : ''}
+                           aria-disabled={!trelloCardUrl}
+                           tabIndex={!trelloCardUrl ? -1 : undefined}
+                           className={!trelloCardUrl ? 'pointer-events-none' : ''}
                         >
-                            <Button size="icon" variant="outline" disabled={!trelloCardUrl || !user}>
+                            <Button size="icon" variant="outline" disabled={!trelloCardUrl}>
                                 <ExternalLink className="h-4 w-4" />
                             </Button>
                         </a>
@@ -97,7 +94,6 @@ export function Header({ searchTerm, setSearchTerm, onSetRange, onToggleView, vi
           <Button size="sm" variant="outline" onClick={() => onSetRange('1Y')} disabled={!isProjectLoaded}>1A</Button>
           <Button size="sm" variant="outline" onClick={() => onSetRange('All')} disabled={!isProjectLoaded}>Todo</Button>
       </div>
-      <AuthButton />
     </header>
   );
 }

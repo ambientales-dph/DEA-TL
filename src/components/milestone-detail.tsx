@@ -15,7 +15,6 @@ import { Button } from './ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
-import { useAuth } from '@/context/auth-context';
 
 interface MilestoneDetailProps {
   milestone: Milestone;
@@ -25,7 +24,6 @@ interface MilestoneDetailProps {
 }
 
 export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onClose }: MilestoneDetailProps) {
-  const { user } = useAuth();
   const [newTag, setNewTag] = React.useState('');
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [editableTitle, setEditableTitle] = React.useState('');
@@ -172,13 +170,13 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                 ) : (
                 <h2 className="font-headline text-lg font-medium flex items-center gap-2 truncate">
                     <span className="truncate" title={milestone.name}>{milestone.name}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsEditingTitle(true)} disabled={!user}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsEditingTitle(true)}>
                         <Pencil className="h-3 w-3" />
                     </Button>
                 </h2>
                 )}
                 <div className="flex items-center pt-1.5">
-                    <Select value={milestone.category.id} onValueChange={handleCategoryChange} disabled={!user}>
+                    <Select value={milestone.category.id} onValueChange={handleCategoryChange}>
                         <SelectTrigger className="w-auto border-none shadow-none focus:ring-0 gap-2 h-auto p-0 text-xs font-medium text-zinc-700 hover:text-black focus:text-black disabled:opacity-100 bg-transparent">
                             <SelectValue asChild>
                                 <div className="flex items-center cursor-pointer">
@@ -213,7 +211,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
             <div className="flex items-center gap-1 shrink-0">
                 <button 
                     onClick={handleToggleImportant} 
-                    disabled={!user}
                     className="p-1 rounded-full text-zinc-500 hover:text-yellow-400 hover:bg-yellow-400/10 transition-colors disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
                     aria-label={milestone.isImportant ? 'Quitar de importantes' : 'Marcar como importante'}
                 >
@@ -248,12 +245,12 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                 <div
                     className={cn(
                         "text-sm text-zinc-700 leading-normal relative",
-                         user && "cursor-pointer hover:bg-zinc-400/30 p-2 -m-2 rounded-md transition-colors group"
+                        "cursor-pointer hover:bg-zinc-400/30 p-2 -m-2 rounded-md transition-colors group"
                     )}
-                    onClick={() => user && setIsEditingDescription(true)}
+                    onClick={() => setIsEditingDescription(true)}
                 >
-                    <p className="whitespace-pre-wrap">{milestone.description || (user ? 'Añade una descripción...' : 'Descripción no editable.')}</p>
-                    {user && <Pencil className="h-3 w-3 absolute top-1 right-1 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                    <p className="whitespace-pre-wrap">{milestone.description || 'Añade una descripción...'}</p>
+                    <Pencil className="h-3 w-3 absolute top-1 right-1 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
                 )}
                 
@@ -267,7 +264,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                                     onClick={() => handleTagRemove(tag)} 
                                     className="ml-1 rounded-full opacity-50 group-hover/badge:opacity-100 hover:bg-destructive/10 p-0.5 transition-opacity disabled:hover:bg-transparent text-destructive"
                                     aria-label={`Quitar etiqueta ${tag}`}
-                                    disabled={!user}
                                 >
                                     <X className="h-3 w-3" />
                                 </button>
@@ -279,9 +275,8 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                         value={newTag}
                         onChange={(e) => setNewTag(e.target.value)}
                         onKeyDown={handleTagAdd}
-                        placeholder={user ? "Añadir etiqueta y presionar Enter..." : "Inicia sesión para editar etiquetas"}
+                        placeholder={"Añadir etiqueta y presionar Enter..."}
                         className="h-8 bg-zinc-100 text-xs border border-zinc-400 text-black placeholder:text-zinc-500"
-                        disabled={!user}
                     />
                 </div>
             
@@ -292,7 +287,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                         <div className="flex items-center gap-2">
                             <Paperclip className="h-4 w-4" /> Archivos Adjuntos
                         </div>
-                        <Button variant="outline" size="sm" className="h-7 text-black border-zinc-400 hover:bg-zinc-200" onClick={() => fileInputRef.current?.click()} disabled={!user}>
+                        <Button variant="outline" size="sm" className="h-7 text-black border-zinc-400 hover:bg-zinc-200" onClick={() => fileInputRef.current?.click()}>
                             <UploadCloud className="mr-2 h-3 w-3"/>
                             Añadir
                         </Button>
@@ -302,7 +297,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                             className="hidden"
                             multiple
                             onChange={handleFileAdd}
-                            disabled={!user}
                         />
                     </h3>
                     {milestone.associatedFiles.length > 0 ? (

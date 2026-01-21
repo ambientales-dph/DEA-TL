@@ -24,7 +24,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useAuth } from '@/context/auth-context';
 import { Card, CardContent } from './ui/card';
 import {
   Accordion,
@@ -54,7 +53,6 @@ export function Sidebar({
     selectedCard, 
     onNewMilestoneClick 
 }: SidebarProps) {
-  const { user } = useAuth();
   const [openPopoverId, setOpenPopoverId] = React.useState<string | null>(null);
   const [isAdding, setIsAdding] = React.useState(false);
   const [newCategoryName, setNewCategoryName] = React.useState('');
@@ -269,7 +267,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
       </div>
       <div className="flex-1 p-3 flex flex-col gap-4 min-h-0">
         
-        <Button onClick={onNewMilestoneClick} disabled={!selectedCard || !user} size="sm" className="h-8">
+        <Button onClick={onNewMilestoneClick} disabled={!selectedCard} size="sm" className="h-8">
           <UploadCloud className="mr-2 h-4 w-4" />
           Hito nuevo
         </Button>
@@ -397,7 +395,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                         <AccordionTrigger className="flex-1 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:no-underline">
                             Categorías
                         </AccordionTrigger>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsAdding(true)} disabled={isAdding || !user}>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsAdding(true)} disabled={isAdding}>
                             <Plus className="h-4 w-4" />
                             <span className="sr-only">Añadir Categoría</span>
                         </Button>
@@ -430,7 +428,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                                                     className="w-2.5 h-2.5 rounded-full shrink-0 transition-transform hover:scale-125 focus:outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                                                     style={{ backgroundColor: category.color }}
                                                     aria-label={`Cambiar color de la categoría ${category.name}`}
-                                                    disabled={!!editingCategoryId || !user}
+                                                    disabled={!!editingCategoryId}
                                                     />
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-auto p-0" align="start">
@@ -453,10 +451,10 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                                             <>
                                                 <span className="ml-3 text-muted-foreground truncate" title={category.name}>{category.name}</span>
                                                 <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleEditStart(category)} disabled={!user || !!editingCategoryId}>
+                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleEditStart(category)} disabled={!!editingCategoryId}>
                                                     <Pencil className="h-3.5 w-3.5" />
                                                 </Button>
-                                                <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-destructive/10 text-destructive" onClick={() => setCategoryToDelete(category)} disabled={!user || !!editingCategoryId}>
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 hover:bg-destructive/10 text-destructive" onClick={() => setCategoryToDelete(category)} disabled={!!editingCategoryId}>
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                 </Button>
                                                 </div>
