@@ -531,6 +531,7 @@ export default function Home() {
         onCardSelect={handleCardSelect}
         selectedCard={selectedCard}
         onNewMilestoneClick={() => setIsUploadOpen(true)}
+        onGoHome={handleGoHome}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header 

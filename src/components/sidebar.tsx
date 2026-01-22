@@ -41,6 +41,7 @@ interface SidebarProps {
   onCardSelect: (card: TrelloCardBasic | null) => void;
   selectedCard: TrelloCardBasic | null;
   onNewMilestoneClick: () => void;
+  onGoHome: () => void;
 }
 
 export function Sidebar({ 
@@ -51,7 +52,8 @@ export function Sidebar({
     onCategoryDelete,
     onCardSelect, 
     selectedCard, 
-    onNewMilestoneClick 
+    onNewMilestoneClick,
+    onGoHome,
 }: SidebarProps) {
   const [openPopoverId, setOpenPopoverId] = React.useState<string | null>(null);
   const [isAdding, setIsAdding] = React.useState(false);
@@ -156,6 +158,11 @@ export function Sidebar({
     setFilteredCards(filtered);
   }, [cardSearchTerm, cards]);
 
+  const localOnGoHome = () => {
+    setCardSearchTerm('');
+    setSelectedBoard('');
+    onGoHome();
+  }
 
   const handleColorSelect = (categoryId: string, color: string) => {
     onCategoryColorChange(categoryId, color);
