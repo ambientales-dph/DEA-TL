@@ -185,3 +185,24 @@ export async function searchTrelloCards(query: string): Promise<TrelloCardBasic[
       return [];
     }
 }
+
+export async function getCardById(cardId: string): Promise<TrelloCardBasic | null> {
+  const authParams = getTrelloAuthParams();
+  if (!authParams) return null;
+
+  const url = `https://api.trello.com/1/cards/${cardId}?fields=name,id,url&${authParams}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Trello API Error (getCardById):', errorText);
+      return null;
+    }
+    const data = await response.json();
+    return data as TrelloCardBasic;
+  } catch (error) {
+    console.error('Error fetching card from Trello:', error);
+    return null;
+  }
+}

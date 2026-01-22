@@ -18,7 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { getCardAttachments, type TrelloCardBasic } from '@/services/trello';
+import { getCardAttachments, type TrelloCardBasic, getCardById } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
@@ -49,6 +49,7 @@ export default function Home() {
   const [isTrelloSummaryOpen, setIsTrelloSummaryOpen] = React.useState(false);
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
+  const [hasLoadedFromUrl, setHasLoadedFromUrl] = React.useState(false);
 
   // Resizing state
   const [isResizing, setIsResizing] = React.useState(false);
@@ -120,31 +121,6 @@ export default function Home() {
     }
   }, [categories, isLoaded]);
 
-
-  React.useEffect(() => {
-    if (milestones.length > 0) {
-      const allDates = milestones.map(m => parseISO(m.occurredAt));
-      const oldest = new Date(Math.min(...allDates.map(d => d.getTime())));
-      const newest = new Date(Math.max(...allDates.map(d => d.getTime())));
-
-      const newBounds = { start: oldest.toISOString(), end: newest.toISOString() };
-
-      const hasBoundsChanged = newBounds.start !== milestoneDateBounds.current?.start || newBounds.end !== milestoneDateBounds.current?.end;
-      
-      if (hasBoundsChanged) {
-        milestoneDateBounds.current = newBounds;
-        setDateRange({
-          start: subMonths(oldest, 1),
-          end: addMonths(newest, 1),
-        });
-      }
-    } else {
-        milestoneDateBounds.current = null;
-        setDateRange(null);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [milestones]);
-
   const handleCardSelect = React.useCallback(async (card: TrelloCardBasic | null) => {
     setSelectedCard(card);
     setSelectedMilestone(null); // Always close detail panel when changing card
@@ -174,7 +150,7 @@ export default function Home() {
           return {
             ...m,
             category: freshCategory,
-            tags: ['hito-ejemplo'],
+            tags: ['hito-ejemplo'], // Generic tag
           };
         });
         
@@ -251,6 +227,68 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categories]);
 
+  // This effect will run once on page load to check for a cardId in the URL
+  React.useEffect(() => {
+    if (isLoaded && !hasLoadedFromUrl) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const cardId = urlParams.get('cardId');
+  
+      if (cardId) {
+        setHasLoadedFromUrl(true); // Mark that we've processed the URL param
+        const loadCardFromUrl = async () => {
+          setIsLoadingTimeline(true);
+          try {
+            const card = await getCardById(cardId);
+            if (card) {
+              await handleCardSelect(card);
+            } else {
+              toast({
+                variant: "destructive",
+                title: "Tarjeta no encontrada",
+                description: `No se pudo encontrar una tarjeta de Trello con el ID: ${cardId}`,
+              });
+               setIsLoadingTimeline(false);
+            }
+          } catch (error) {
+            console.error("Failed to load card from URL", error);
+            toast({
+              variant: "destructive",
+              title: "Error al cargar tarjeta",
+              description: "Hubo un problema al intentar cargar la tarjeta desde la URL.",
+            });
+            setIsLoadingTimeline(false);
+          }
+        };
+        loadCardFromUrl();
+      }
+    }
+  }, [isLoaded, hasLoadedFromUrl, handleCardSelect]);
+
+
+  React.useEffect(() => {
+    if (milestones.length > 0) {
+      const allDates = milestones.map(m => parseISO(m.occurredAt));
+      const oldest = new Date(Math.min(...allDates.map(d => d.getTime())));
+      const newest = new Date(Math.max(...allDates.map(d => d.getTime())));
+
+      const newBounds = { start: oldest.toISOString(), end: newest.toISOString() };
+
+      const hasBoundsChanged = newBounds.start !== milestoneDateBounds.current?.start || newBounds.end !== milestoneDateBounds.current?.end;
+      
+      if (hasBoundsChanged) {
+        milestoneDateBounds.current = newBounds;
+        setDateRange({
+          start: subMonths(oldest, 1),
+          end: addMonths(newest, 1),
+        });
+      }
+    } else {
+        milestoneDateBounds.current = null;
+        setDateRange(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [milestones]);
+
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find(c => c.id === categoryId);
@@ -289,7 +327,7 @@ export default function Home() {
         description: description,
         occurredAt: occurredAt.toISOString(),
         category: category,
-        tags: ['manual'], // Start with null to show loading spinner
+        tags: ['manual'], // Generic tag
         associatedFiles: associatedFiles,
         isImportant: false,
         history: [creationLog],
