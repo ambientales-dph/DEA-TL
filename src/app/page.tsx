@@ -508,6 +508,16 @@ export default function Home() {
     };
   }, [isResizing]);
 
+  React.useEffect(() => {
+    if (selectedCard) {
+      const match = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
+      const projectCode = match ? match[0].toUpperCase() : selectedCard.name;
+      document.title = `DEAS TL | ${projectCode}`;
+    } else {
+      document.title = 'DEAS TL';
+    }
+  }, [selectedCard]);
+
   const handleToggleView = () => setView(prev => prev === 'timeline' ? 'summary' : 'timeline');
 
   return (
