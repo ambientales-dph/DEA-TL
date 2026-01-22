@@ -50,6 +50,7 @@ export default function Home() {
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
   const [hasLoadedFromUrl, setHasLoadedFromUrl] = React.useState(false);
+  const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
 
   // Resizing state
   const [isResizing, setIsResizing] = React.useState(false);
@@ -277,7 +278,7 @@ export default function Home() {
           try {
             const card = await getCardById(cardId);
             if (card) {
-              await handleCardSelect(card);
+              setCardFromUrl(card);
             } else {
               toast({
                 variant: "destructive",
@@ -299,7 +300,7 @@ export default function Home() {
         loadCardFromUrl();
       }
     }
-  }, [isLoaded, hasLoadedFromUrl, handleCardSelect]);
+  }, [isLoaded, hasLoadedFromUrl]);
 
 
   React.useEffect(() => {
@@ -414,6 +415,7 @@ export default function Home() {
     setSelectedMilestone(null);
     setSearchTerm('');
     setView('timeline');
+    setCardFromUrl(null);
   }, []);
 
   const filteredMilestones = milestones
@@ -569,6 +571,7 @@ export default function Home() {
         selectedCard={selectedCard}
         onNewMilestoneClick={() => setIsUploadOpen(true)}
         onGoHome={handleGoHome}
+        cardFromUrl={cardFromUrl}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header 

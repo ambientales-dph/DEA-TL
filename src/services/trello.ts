@@ -229,7 +229,7 @@ export async function getCardById(cardId: string): Promise<TrelloCardBasic | nul
   const authParams = getTrelloAuthParams();
   if (!authParams) return null;
 
-  const url = `https://api.trello.com/1/cards/${cardId}?fields=name,id,url&${authParams}`;
+  const url = `https://api.trello.com/1/cards/${cardId}?fields=name,id,url,idBoard,idList&${authParams}`;
 
   try {
     const response = await fetch(url);

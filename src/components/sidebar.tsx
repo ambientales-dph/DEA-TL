@@ -42,6 +42,7 @@ interface SidebarProps {
   selectedCard: TrelloCardBasic | null;
   onNewMilestoneClick: () => void;
   onGoHome: () => void;
+  cardFromUrl?: TrelloCardBasic | null;
 }
 
 export function Sidebar({ 
@@ -54,6 +55,7 @@ export function Sidebar({
     selectedCard, 
     onNewMilestoneClick,
     onGoHome,
+    cardFromUrl,
 }: SidebarProps) {
   const [openPopoverId, setOpenPopoverId] = React.useState<string | null>(null);
   const [isAdding, setIsAdding] = React.useState(false);
@@ -99,6 +101,15 @@ export function Sidebar({
   }, []);
 
   React.useEffect(() => {
+    if (cardFromUrl) {
+      const card = cardFromUrl as TrelloCardBasic & { idBoard: string; idList: string };
+      setSelectedBoard(card.idBoard);
+      setCardSearchTerm(card.name);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardFromUrl]);
+
+  React.useEffect(() => {
     if (!selectedBoard) {
       setLists([]);
       setSelectedList('');
@@ -111,6 +122,9 @@ export function Sidebar({
       try {
         const boardLists = await getBoardLists(selectedBoard);
         setLists(boardLists);
+        if (cardFromUrl && (cardFromUrl as any).idBoard === selectedBoard) {
+            setSelectedList((cardFromUrl as any).idList);
+        }
       } catch (error) {
         console.error(`Failed to fetch lists for board ${selectedBoard}`, error);
       } finally {
@@ -118,10 +132,10 @@ export function Sidebar({
       }
     };
     fetchLists();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBoard]);
 
   React.useEffect(() => {
-    onCardSelect(null);
     if (!selectedList) {
         setCards([]);
         setFilteredCards([]);
@@ -134,6 +148,9 @@ export function Sidebar({
             const listCards = await getCardsInList(selectedList);
             setCards(listCards);
             setFilteredCards(listCards);
+             if (cardFromUrl && (cardFromUrl as any).idList === selectedList) {
+                onCardSelect(cardFromUrl);
+            }
         } catch (error) {
             console.error(`Failed to fetch cards for list ${selectedList}`, error);
             setCards([]);
@@ -307,7 +324,11 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                     </SelectContent>
                     </Select>
 
-                    <Select onValueChange={setSelectedList} value={selectedList} disabled={!selectedBoard || isLoadingLists}>
+                    <Select 
+                      onValueChange={(value) => { setSelectedList(value); onCardSelect(null); }} 
+                      value={selectedList} 
+                      disabled={!selectedBoard || isLoadingLists}
+                    >
                     <SelectTrigger className="w-full h-8 text-xs">
                         <SelectValue placeholder={isLoadingLists ? "Cargando listas..." : "Seleccionar lista"} />
                     </SelectTrigger>
