@@ -544,38 +544,46 @@ export default function Home() {
           isProjectLoaded={!!selectedCard}
           onToggleTrelloSummary={() => setIsTrelloSummaryOpen(true)}
         />
-        <div 
-          ref={resizeContainerRef}
-          className="flex-1 flex flex-col overflow-hidden"
-        >
-          {view === 'timeline' ? (
-            <>
-              <main 
-                className="overflow-y-auto p-4 md:p-6"
-                style={{ height: selectedMilestone ? `${timelinePanelHeight}%` : '100%' }}
-              >
-              {isLoadingTimeline ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                      <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                      <h2 className="text-2xl font-medium font-headline mt-4">Cargando línea de tiempo...</h2>
-                      <p className="mt-2 text-muted-foreground">
-                          Obteniendo los hitos desde Trello.
-                      </p>
-                  </div>
-              ) : milestones.length > 0 && dateRange ? (
-                  <div className="h-full w-full">
-                      <Timeline 
-                          milestones={filteredMilestones} 
-                          startDate={dateRange.start}
-                          endDate={dateRange.end}
-                          onMilestoneClick={handleMilestoneClick}
-                      />
-                  </div>
-              ) : (
-                  <WelcomeScreen />
-              )}
-              </main>
-              {selectedMilestone && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {selectedCard && (
+              <div className="px-4 md:px-6 py-3 border-b bg-background shrink-0">
+                  <h2 className="text-xl font-headline font-medium text-foreground truncate" title={selectedCard.name}>
+                      {selectedCard.name}
+                  </h2>
+              </div>
+          )}
+          <div
+            ref={resizeContainerRef}
+            className="flex-1 flex flex-col overflow-hidden"
+          >
+            {view === 'timeline' ? (
+              <>
+                <main 
+                  className="overflow-y-auto p-4 md:p-6"
+                  style={{ height: selectedMilestone ? `${timelinePanelHeight}%` : '100%' }}
+                >
+                {isLoadingTimeline ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                        <h2 className="text-2xl font-medium font-headline mt-4">Cargando línea de tiempo...</h2>
+                        <p className="mt-2 text-muted-foreground">
+                            Obteniendo los hitos desde Trello.
+                        </p>
+                    </div>
+                ) : milestones.length > 0 && dateRange ? (
+                    <div className="h-full w-full">
+                        <Timeline 
+                            milestones={filteredMilestones} 
+                            startDate={dateRange.start}
+                            endDate={dateRange.end}
+                            onMilestoneClick={handleMilestoneClick}
+                        />
+                    </div>
+                ) : (
+                    <WelcomeScreen />
+                )}
+                </main>
+                {selectedMilestone && (
                    <>
                       <div
                         onMouseDown={handleResizeMouseDown}
@@ -591,13 +599,14 @@ export default function Home() {
                           />
                       </div>
                    </>
-              )}
-            </>
-          ) : (
-            <div className="flex-1 overflow-y-auto bg-zinc-200">
-              <MilestoneSummaryTable milestones={filteredMilestones} projectName={selectedCard?.name} />
-            </div>
-          )}
+                )}
+              </>
+            ) : (
+              <div className="flex-1 overflow-y-auto bg-zinc-200">
+                <MilestoneSummaryTable milestones={filteredMilestones} projectName={selectedCard?.name} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
