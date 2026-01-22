@@ -42,6 +42,23 @@ export interface TrelloAttachment {
     url: string;
 }
 
+export interface TrelloAction {
+    id: string;
+    data: {
+        text?: string;
+        listBefore?: { id: string, name: string };
+        listAfter?: { id: string, name: string };
+        board: { id: string, name: string};
+        card: { id: string, name: string};
+    };
+    type: 'commentCard' | 'updateCard';
+    date: string;
+    memberCreator: {
+        id: string;
+        fullName: string;
+    };
+}
+
 
 function getTrelloAuthParams(): string | null {
     const apiKey = process.env.TRELLO_API_KEY;
@@ -163,6 +180,28 @@ export async function getCardAttachments(cardId: string): Promise<TrelloAttachme
     console.error('Error fetching attachments from Trello:', error);
     return [];
   }
+}
+
+export async function getCardActions(cardId: string): Promise<TrelloAction[]> {
+    const authParams = getTrelloAuthParams();
+    if (!authParams) return [];
+  
+    // Fetch comments and card movements
+    const url = `https://api.trello.com/1/cards/${cardId}/actions?filter=commentCard,updateCard&fields=data,date,type,memberCreator&memberCreator_fields=fullName&${authParams}`;
+  
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Trello API Error (getCardActions):', errorText);
+        return [];
+      }
+      const data = await response.json();
+      return data as TrelloAction[];
+    } catch (error) {
+      console.error('Error fetching actions from Trello:', error);
+      return [];
+    }
 }
 
 export async function searchTrelloCards(query: string): Promise<TrelloCardBasic[]> {

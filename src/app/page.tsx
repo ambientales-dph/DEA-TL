@@ -18,7 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { getCardAttachments, type TrelloCardBasic, getCardById } from '@/services/trello';
+import { getCardAttachments, type TrelloCardBasic, getCardById, getCardActions, type TrelloAction } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
@@ -209,8 +209,45 @@ export default function Home() {
                 history: [creationLog],
             };
         });
+
+        const actions = await getCardActions(card.id);
+        const commentsCategory = categories.find(c => c.id === 'cat-10') || { id: 'cat-10', name: 'Comentarios', color: '#607D8B' };
+        const activityCategory = categories.find(c => c.id === 'cat-11') || { id: 'cat-11', name: 'Actividad de Tarjeta', color: '#9E9E9E' };
+
+        const actionMilestones: Milestone[] = actions.map(action => {
+            const creationLog = `${format(new Date(), "PPpp", { locale: es })} - Creación desde actividad de Trello.`;
+            let milestone: Milestone | null = null;
+            
+            if (action.type === 'commentCard' && action.data.text) {
+                milestone = {
+                    id: `hito-${action.id}`,
+                    name: `Comentario de ${action.memberCreator.fullName}`,
+                    description: action.data.text,
+                    occurredAt: action.date,
+                    category: commentsCategory,
+                    tags: ['comentario'],
+                    associatedFiles: [],
+                    isImportant: false,
+                    history: [creationLog],
+                };
+            } else if (action.type === 'updateCard' && action.data.listAfter && action.data.listBefore) {
+                milestone = {
+                    id: `hito-${action.id}`,
+                    name: `Tarjeta movida`,
+                    description: `Movida de "${action.data.listBefore.name}" a "${action.data.listAfter.name}" por ${action.memberCreator.fullName}.`,
+                    occurredAt: action.date,
+                    category: activityCategory,
+                    tags: ['actividad', 'movimiento'],
+                    associatedFiles: [],
+                    isImportant: false,
+                    history: [creationLog],
+                };
+            }
+            
+            return milestone;
+        }).filter((m): m is Milestone => m !== null);
         
-        const allMilestones = [creationMilestone, ...attachmentMilestones];
+        const allMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
         setMilestones(allMilestones);
 
     } catch(error) {
