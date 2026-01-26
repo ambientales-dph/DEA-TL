@@ -31,6 +31,7 @@ export interface TrelloCardBasic {
   id: string;
   name: string;
   url: string;
+  desc?: string;
 }
 
 export interface TrelloAttachment {
@@ -143,7 +144,7 @@ export async function getCardsInList(listId: string): Promise<TrelloCardBasic[]>
   const authParams = getTrelloAuthParams();
   if (!authParams) return [];
 
-  const url = `https://api.trello.com/1/lists/${listId}/cards?fields=name,id,url&${authParams}`;
+  const url = `https://api.trello.com/1/lists/${listId}/cards?fields=name,id,url,desc&${authParams}`;
 
   try {
     const response = await fetch(url);
@@ -208,7 +209,7 @@ export async function searchTrelloCards(query: string): Promise<TrelloCardBasic[
     const authParams = getTrelloAuthParams();
     if (!authParams) return [];
 
-    const url = `https://api.trello.com/1/search?query=${encodeURIComponent(query)}&idBoards=mine&modelTypes=cards&card_fields=name,id,url,idBoard,idList&cards_limit=50&${authParams}`;
+    const url = `https://api.trello.com/1/search?query=${encodeURIComponent(query)}&idBoards=mine&modelTypes=cards&card_fields=name,id,url,idBoard,idList,desc&cards_limit=50&${authParams}`;
   
     try {
       const response = await fetch(url);
@@ -229,7 +230,7 @@ export async function getCardById(cardId: string): Promise<TrelloCardBasic | nul
   const authParams = getTrelloAuthParams();
   if (!authParams) return null;
 
-  const url = `https://api.trello.com/1/cards/${cardId}?fields=name,id,url,idBoard,idList&${authParams}`;
+  const url = `https://api.trello.com/1/cards/${cardId}?fields=name,id,url,idBoard,idList,desc&${authParams}`;
 
   try {
     const response = await fetch(url);

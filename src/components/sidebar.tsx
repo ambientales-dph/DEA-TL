@@ -45,6 +45,14 @@ interface SidebarProps {
   cardFromUrl?: TrelloCardBasic | null;
 }
 
+const normalizeText = (text: string | null | undefined): string => {
+    if (!text) return '';
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+};
+
 export function Sidebar({ 
     categories, 
     onCategoryColorChange, 
@@ -168,10 +176,13 @@ export function Sidebar({
       setFilteredCards(cards);
       return;
     }
-    const lowercasedFilter = cardSearchTerm.toLowerCase();
-    const filtered = cards.filter(card =>
-      card.name.toLowerCase().includes(lowercasedFilter)
-    );
+    const normalizedFilter = normalizeText(cardSearchTerm);
+    const filtered = cards.filter(card => {
+      const normalizedName = normalizeText(card.name);
+      const normalizedDesc = normalizeText(card.desc);
+
+      return normalizedName.includes(normalizedFilter) || normalizedDesc.includes(normalizedFilter);
+    });
     setFilteredCards(filtered);
   }, [cardSearchTerm, cards]);
 
