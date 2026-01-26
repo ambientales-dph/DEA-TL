@@ -499,7 +499,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
         </div>
       </div>
       <div className="p-4 border-t shrink-0">
-        <p className="text-xs text-muted-foreground">&copy; 2024 DEAS TL</p>
+        <p className="text-xs text-muted-foreground">&copy; 2024 DEA TL</p>
       </div>
 
        <AlertDialog open={!!categoryToDelete} onOpenChange={(open) => !open && setCategoryToDelete(null)}>

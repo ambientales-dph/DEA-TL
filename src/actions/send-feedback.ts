@@ -46,7 +46,7 @@ export async function sendFeedback(data: FeedbackData) {
       to: adminEmail,
       
       reply_to: userEmail,
-      subject: `[DEAS TL: comentario] ${title}`,
+      subject: `[DEA TL: comentario] ${title}`,
       text: `Comentario de: ${userEmail}\n\n${content}`,
     });
 

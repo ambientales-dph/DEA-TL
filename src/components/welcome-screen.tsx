@@ -6,9 +6,9 @@ export function WelcomeScreen() {
         <div className="flex flex-col items-center justify-center h-full p-4 md:p-8 overflow-y-auto">
             <div className="text-center mb-8 shrink-0">
                 <GanttChartSquare className="h-16 w-16 mx-auto text-muted-foreground/50" />
-                <h1 className="text-3xl font-bold font-headline mt-4">DEAS TL</h1>
+                <h1 className="text-3xl font-bold font-headline mt-4">DEA TL</h1>
                 <p className="text-foreground/80 max-w-2xl mx-auto mt-2">
-                    Línea de tiempo del Dpto. de Estudios Ambientales y Sociales - DPH
+                    Línea de tiempo del Dpto. de Estudios Ambientales - DPH
                 </p>
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-6xl">

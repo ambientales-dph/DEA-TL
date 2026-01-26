@@ -551,9 +551,9 @@ export default function Home() {
     if (selectedCard) {
       const match = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
       const projectCode = match ? match[0].toUpperCase() : selectedCard.name;
-      document.title = `DEAS TL | ${projectCode}`;
+      document.title = `DEA TL | ${projectCode}`;
     } else {
-      document.title = 'DEAS TL';
+      document.title = 'DEA TL';
     }
   }, [selectedCard]);
 
