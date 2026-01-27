@@ -255,14 +255,7 @@ export default function Home() {
         });
 
         if (writeCount > 0) {
-            batch.commit().catch(async (serverError) => {
-              const permissionError = new FirestorePermissionError({
-                  path: `projects/${card.id}/milestones`,
-                  operation: 'create',
-                  requestResourceData: { note: `${writeCount} new milestones from Trello` },
-              });
-              errorEmitter.emit('permission-error', permissionError);
-            });
+            await batch.commit();
             toast({
                 title: "Nuevos hitos sincronizados",
                 description: `Se guardaron ${writeCount} nuevos hitos desde Trello.`,
@@ -270,11 +263,13 @@ export default function Home() {
         }
     } catch(error) {
         console.error("Failed to process card and sync with Firestore:", error);
-        toast({
-            variant: "destructive",
-            title: "Error al cargar hitos",
-            description: "No se pudieron obtener o guardar los datos de la tarjeta de Trello."
-        });
+        if (card) {
+          const permissionError = new FirestorePermissionError({
+            path: `projects/${card.id}/milestones`,
+            operation: 'list or create',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        }
     } finally {
         setInternalLoading(false);
     }
@@ -364,20 +359,19 @@ export default function Home() {
         history: [creationLog],
     };
     
-    const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', newMilestone.id);
-    setDoc(docRef, newMilestone)
-      .then(() => {
-        setIsUploadOpen(false);
-        toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
-      })
-      .catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'create',
-          requestResourceData: newMilestone,
-        });
-        errorEmitter.emit('permission-error', permissionError);
+    try {
+      const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', newMilestone.id);
+      await setDoc(docRef, newMilestone);
+      setIsUploadOpen(false);
+      toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
+    } catch (serverError) {
+      const permissionError = new FirestorePermissionError({
+        path: `projects/${selectedCard.id}/milestones/${newMilestone.id}`,
+        operation: 'create',
+        requestResourceData: newMilestone,
       });
+      errorEmitter.emit('permission-error', permissionError);
+    }
   }, [categories, firestore, selectedCard]);
 
 
@@ -443,22 +437,23 @@ export default function Home() {
     setCategories(prev => prev.filter(c => c.id !== categoryId));
   }, [milestones]);
 
-  const handleMilestoneUpdate = React.useCallback((updatedMilestone: Milestone) => {
+  const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
     if (!selectedCard || !firestore) return;
     
-    const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
-    setDoc(docRef, updatedMilestone, { merge: true })
-      .catch(async (serverError) => {
-        const permissionError = new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'update',
-          requestResourceData: updatedMilestone,
-        });
-        errorEmitter.emit('permission-error', permissionError);
+    try {
+      const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
+      await setDoc(docRef, updatedMilestone, { merge: true });
+      
+      if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
+          setSelectedMilestone(updatedMilestone);
+      }
+    } catch (serverError) {
+      const permissionError = new FirestorePermissionError({
+        path: `projects/${selectedCard.id}/milestones/${updatedMilestone.id}`,
+        operation: 'update',
+        requestResourceData: updatedMilestone,
       });
-
-    if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
-        setSelectedMilestone(updatedMilestone);
+      errorEmitter.emit('permission-error', permissionError);
     }
   }, [selectedCard, firestore, selectedMilestone]);
 
