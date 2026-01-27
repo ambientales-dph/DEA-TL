@@ -57,7 +57,7 @@ export default function Home() {
       return null;
     }
     return query(collection(firestore, 'projects', selectedCard.id, 'milestones'), orderBy('occurredAt', 'desc'));
-  }, [firestore, selectedCard]);
+  }, [firestore, selectedCard?.id, selectedCard?.name]);
 
   const { data: firestoreMilestones, loading: isLoadingFromDb } = useCollection(milestonesQuery);
 
@@ -366,7 +366,7 @@ export default function Home() {
     
     try {
       const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', newMilestone.id);
-      await setDoc(docRef, newMilestone);
+      setDoc(docRef, newMilestone);
       setIsUploadOpen(false);
       toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
     } catch (serverError) {
@@ -452,7 +452,7 @@ export default function Home() {
 
     try {
       const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
-      await setDoc(docRef, updatedMilestone, { merge: true });
+      setDoc(docRef, updatedMilestone, { merge: true });
       
       if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
           setSelectedMilestone(updatedMilestone);

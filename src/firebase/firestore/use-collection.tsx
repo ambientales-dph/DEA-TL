@@ -14,11 +14,12 @@ export const useCollection = (query: Query | null) => {
     if (!query) {
       setData([]);
       setLoading(false);
-      return;
+      return () => {};
     }
 
     setLoading(true);
-
+    setError(null);
+    
     const unsubscribe = onSnapshot(
       query,
       (snapshot) => {

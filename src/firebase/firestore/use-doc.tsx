@@ -14,10 +14,11 @@ export const useDoc = (ref: DocumentReference | null) => {
     if (!ref) {
       setData(null);
       setLoading(false);
-      return;
+      return () => {};
     }
 
     setLoading(true);
+    setError(null);
 
     const unsubscribe = onSnapshot(
       ref,
