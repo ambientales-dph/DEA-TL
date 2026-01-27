@@ -204,6 +204,12 @@ export default function Home() {
                     toast({ title: "Sincronización completa", description: `Se guardaron ${newMilestonesToSync.length} nuevos hitos desde Trello.` });
                 }).catch((serverError) => {
                     console.error("Firestore Batch Commit Error:", serverError);
+                    toast({
+                        variant: "destructive",
+                        title: "Error al sincronizar con Trello",
+                        description: serverError.message || "No se pudieron guardar los datos de Trello en la base de datos.",
+                        duration: 10000,
+                    });
                     errorEmitter.emit('permission-error', new FirestorePermissionError({
                         path: `projects/${selectedCard.id}/milestones`,
                         operation: 'create',
@@ -315,6 +321,12 @@ export default function Home() {
       })
       .catch((serverError) => {
         console.error("Error creating milestone:", serverError);
+        toast({
+            variant: "destructive",
+            title: "Error al guardar hito",
+            description: serverError.message || "No se pudo comunicar con la base de datos.",
+            duration: 10000,
+        });
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: milestonesRef.path,
             operation: 'create',
@@ -340,6 +352,12 @@ export default function Home() {
       })
       .catch((serverError) => {
           console.error("Error updating milestone:", serverError);
+          toast({
+              variant: "destructive",
+              title: "Error al actualizar hito",
+              description: serverError.message || "No se pudo comunicar con la base de datos.",
+              duration: 10000,
+          });
           errorEmitter.emit('permission-error', new FirestorePermissionError({
               path: milestoneRef.path,
               operation: 'update',
