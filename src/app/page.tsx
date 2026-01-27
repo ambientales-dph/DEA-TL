@@ -53,7 +53,7 @@ export default function Home() {
   const firestore = useFirestore();
 
   const milestonesQuery = React.useMemo(() => {
-    if (!firestore || !selectedCard || selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060')) {
+    if (!firestore || !selectedCard || selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060') || selectedCard.name.toLowerCase().includes('rlu002')) {
       return null;
     }
     return query(collection(firestore, 'projects', selectedCard.id, 'milestones'), orderBy('occurredAt', 'desc'));
@@ -62,7 +62,7 @@ export default function Home() {
   const { data: firestoreMilestones, loading: isLoadingFromDb } = useCollection(milestonesQuery);
 
   const milestones = React.useMemo(() => {
-    if (selectedCard?.name.toLowerCase().includes('rsb002') || selectedCard?.name.toLowerCase().includes('rsa060')) {
+    if (selectedCard?.name.toLowerCase().includes('rsb002') || selectedCard?.name.toLowerCase().includes('rsa060') || selectedCard?.name.toLowerCase().includes('rlu002')) {
       return localMilestones;
     }
     return (firestoreMilestones as Milestone[]) || [];
@@ -131,7 +131,7 @@ export default function Home() {
     setInternalLoading(true);
 
     const cardNameLower = card.name.toLowerCase();
-    const isRsb002Card = cardNameLower.includes('rsb002');
+    const isRsb002Card = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002');
     const isRsa060Card = cardNameLower.includes('rsa060');
     
     if (isRsb002Card || isRsa060Card) {
