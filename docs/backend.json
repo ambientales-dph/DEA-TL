@@ -40,6 +40,22 @@
       },
       "required": ["id", "name", "description", "occurredAt", "category", "isImportant", "history"]
     },
+    "project": {
+      "title": "Project",
+      "description": "Represents a project, typically linked to a Trello card, containing its name and code.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The full name of the project."
+        },
+        "code": {
+          "type": "string",
+          "description": "The project code, extracted from the name (e.g., RSB002)."
+        }
+      },
+      "required": ["name"]
+    },
     "userProfile": {
       "title": "User Profile",
       "description": "A user's profile.",
@@ -57,6 +73,10 @@
     "providers": []
   },
   "firestore": {
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/backend/entities/project" },
+      "description": "Stores project-level information like its name and code."
+    },
     "/projects/{projectId}/milestones/{milestoneId}": {
       "schema": { "$ref": "#/backend/entities/milestone" },
       "description": "Stores milestones for a specific project."

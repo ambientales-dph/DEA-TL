@@ -140,6 +140,29 @@ export default function Home() {
         try {
             console.log(`Syncing Trello data for card ${selectedCard.id} to Firestore...`);
 
+            const projectRef = doc(firestore, 'projects', selectedCard.id);
+            const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
+            const projectData = {
+                name: selectedCard.name,
+                code: codeMatch ? codeMatch[0].toUpperCase() : null
+            };
+            
+            setDoc(projectRef, projectData, { merge: true })
+                .catch((serverError) => {
+                    console.error("Firestore Project Doc Write Error:", serverError);
+                    toast({
+                        variant: "destructive",
+                        title: "Error al guardar datos del proyecto",
+                        description: serverError.message || "No se pudo guardar la información del proyecto en la base de datos.",
+                        duration: 10000,
+                    });
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({
+                        path: projectRef.path,
+                        operation: 'update',
+                        requestResourceData: projectData
+                    }));
+                });
+
             const [attachments, actions] = await Promise.all([
                 getCardAttachments(selectedCard.id),
                 getCardActions(selectedCard.id),
