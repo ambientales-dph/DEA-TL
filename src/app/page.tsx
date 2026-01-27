@@ -21,10 +21,6 @@ import { RSA060_MILESTONES } from '@/lib/rsa060-data';
 import { FeedbackButton } from '@/components/feedback-button';
 import { FeedbackDialog } from '@/components/feedback-dialog';
 import { TrelloSummary } from '@/components/trello-summary';
-import { useCollection, useFirestore } from '@/firebase';
-import { collection, doc, getDocs, query, writeBatch, setDoc, orderBy } from 'firebase/firestore';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 const DEFAULT_CATEGORY_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
 
@@ -50,25 +46,8 @@ export default function Home() {
   const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
   const [localMilestones, setLocalMilestones] = React.useState<Milestone[]>([]);
   
-  const firestore = useFirestore();
-
-  const milestonesQuery = React.useMemo(() => {
-    if (!firestore || !selectedCard || selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060') || selectedCard.name.toLowerCase().includes('rlu002')) {
-      return null;
-    }
-    return query(collection(firestore, 'projects', selectedCard.id, 'milestones'), orderBy('occurredAt', 'desc'));
-  }, [firestore, selectedCard?.id, selectedCard?.name]);
-
-  const { data: firestoreMilestones, loading: isLoadingFromDb } = useCollection(milestonesQuery);
-
-  const milestones = React.useMemo(() => {
-    if (selectedCard?.name.toLowerCase().includes('rsb002') || selectedCard?.name.toLowerCase().includes('rsa060') || selectedCard?.name.toLowerCase().includes('rlu002')) {
-      return localMilestones;
-    }
-    return (firestoreMilestones as Milestone[]) || [];
-  }, [firestoreMilestones, localMilestones, selectedCard]);
-
-  const isLoadingTimeline = isLoadingFromDb || internalLoading;
+  const milestones = localMilestones;
+  const isLoadingTimeline = internalLoading;
 
   // Resizing state
   const [isResizing, setIsResizing] = React.useState(false);
@@ -130,29 +109,23 @@ export default function Home() {
     
     setInternalLoading(true);
 
-    const cardNameLower = card.name.toLowerCase();
-    const isRsb002Card = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002');
-    const isRsa060Card = cardNameLower.includes('rsa060');
-    
-    if (isRsb002Card || isRsa060Card) {
-        const localData = isRsb002Card ? RSB002_MILESTONES : RSA060_MILESTONES;
-        const categoriesMap = new Map(categories.map(c => [c.id, c]));
-        const milestonesWithCategory = localData.map(m => ({
-          ...m,
-          category: categoriesMap.get(m.category.id) || m.category,
-          tags: ['hito-ejemplo'],
-        }));
-        setLocalMilestones(milestonesWithCategory);
-        setInternalLoading(false);
-        return;
-    }
-    
-    if (!firestore) {
-        setInternalLoading(false);
-        return;
-    }
-
     try {
+        const cardNameLower = card.name.toLowerCase();
+        const isRsb002Card = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002');
+        const isRsa060Card = cardNameLower.includes('rsa060');
+        
+        if (isRsb002Card || isRsa060Card) {
+            const localData = isRsb002Card ? RSB002_MILESTONES : RSA060_MILESTONES;
+            const categoriesMap = new Map(categories.map(c => [c.id, c]));
+            const milestonesWithCategory = localData.map(m => ({
+              ...m,
+              category: categoriesMap.get(m.category.id) || m.category,
+              tags: ['hito-ejemplo'],
+            }));
+            setLocalMilestones(milestonesWithCategory);
+            return;
+        }
+    
         const systemCategory = categories.find(c => c.id === 'cat-sistema') || { id: 'cat-sistema', name: 'Sistema', color: '#000000' };
 
         const creationDate = getTrelloObjectCreationDate(card.id);
@@ -238,42 +211,19 @@ export default function Home() {
         }).filter((m): m is Milestone => m !== null);
         
         const trelloMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
+        setLocalMilestones(trelloMilestones);
 
-        const milestonesRef = collection(firestore, 'projects', card.id, 'milestones');
-        const existingMilestonesSnap = await getDocs(milestonesRef);
-        const existingMilestonesMap = new Map(existingMilestonesSnap.docs.map(doc => [doc.id, doc.data() as Milestone]));
-
-        const batch = writeBatch(firestore);
-        let writeCount = 0;
-
-        trelloMilestones.forEach(trelloMilestone => {
-            if (!existingMilestonesMap.has(trelloMilestone.id)) {
-                const docRef = doc(firestore, 'projects', card.id, 'milestones', trelloMilestone.id);
-                batch.set(docRef, trelloMilestone);
-                writeCount++;
-            }
-        });
-
-        if (writeCount > 0) {
-            await batch.commit();
-            toast({
-                title: "Nuevos hitos sincronizados",
-                description: `Se guardaron ${writeCount} nuevos hitos desde Trello.`,
-            });
-        }
     } catch(error) {
-        console.error("Failed to process card and sync with Firestore:", error);
-        if (card) {
-          const permissionError = new FirestorePermissionError({
-            path: `projects/${card.id}/milestones`,
-            operation: 'list or create',
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        }
+        console.error("Failed to process card and sync with Trello:", error);
+        toast({
+            variant: "destructive",
+            title: "Error al sincronizar con Trello",
+            description: "No se pudieron cargar los datos de la tarjeta. Revisa tu conexión y las credenciales de Trello.",
+        });
     } finally {
         setInternalLoading(false);
     }
-  }, [categories, firestore]);
+  }, [categories]);
 
   React.useEffect(() => {
     if (isLoaded && !hasLoadedFromUrl) {
@@ -330,9 +280,7 @@ export default function Home() {
   }, [milestones]);
 
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
-    if (!selectedCard || !firestore) return;
-    
-    if (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060')) {
+    if (selectedCard && (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060'))) {
       toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para los proyectos de ejemplo." });
       return;
     }
@@ -364,20 +312,10 @@ export default function Home() {
         history: [creationLog],
     };
     
-    try {
-      const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', newMilestone.id);
-      setDoc(docRef, newMilestone);
-      setIsUploadOpen(false);
-      toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
-    } catch (serverError) {
-      const permissionError = new FirestorePermissionError({
-        path: `projects/${selectedCard.id}/milestones/${newMilestone.id}`,
-        operation: 'create',
-        requestResourceData: newMilestone,
-      });
-      errorEmitter.emit('permission-error', permissionError);
-    }
-  }, [categories, firestore, selectedCard]);
+    setLocalMilestones(prev => [...prev, newMilestone]);
+    setIsUploadOpen(false);
+    toast({ title: "Hito creado", description: "El nuevo hito ha sido agregado localmente." });
+  }, [categories, selectedCard]);
 
 
   const handleSetRange = React.useCallback((rangeType: '1D' | '1M' | '1Y' | 'All') => {
@@ -443,29 +381,17 @@ export default function Home() {
   }, [milestones]);
 
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
-    if (!selectedCard || !firestore) return;
-    
-    if (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060')) {
+    if (selectedCard && (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060'))) {
       toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para los proyectos de ejemplo." });
       return;
     }
 
-    try {
-      const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
-      setDoc(docRef, updatedMilestone, { merge: true });
-      
-      if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
-          setSelectedMilestone(updatedMilestone);
-      }
-    } catch (serverError) {
-      const permissionError = new FirestorePermissionError({
-        path: `projects/${selectedCard.id}/milestones/${updatedMilestone.id}`,
-        operation: 'update',
-        requestResourceData: updatedMilestone,
-      });
-      errorEmitter.emit('permission-error', permissionError);
+    setLocalMilestones(prev => prev.map(m => m.id === updatedMilestone.id ? updatedMilestone : m));
+    
+    if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
+        setSelectedMilestone(updatedMilestone);
     }
-  }, [selectedCard, firestore, selectedMilestone]);
+  }, [selectedCard, selectedMilestone]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -552,7 +478,7 @@ export default function Home() {
                         <Loader2 className="h-12 w-12 animate-spin text-primary" />
                         <h2 className="text-2xl font-medium font-headline mt-4">Cargando línea de tiempo...</h2>
                         <p className="mt-2 text-muted-foreground">
-                            Sincronizando con la base de datos.
+                            Sincronizando con Trello.
                         </p>
                     </div>
                 ) : milestones.length > 0 && dateRange ? (
