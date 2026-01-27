@@ -332,6 +332,11 @@ export default function Home() {
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
     if (!selectedCard || !firestore) return;
     
+    if (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060')) {
+      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para los proyectos de ejemplo." });
+      return;
+    }
+
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find(c => c.id === categoryId);
     if (!category) {
@@ -440,6 +445,11 @@ export default function Home() {
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
     if (!selectedCard || !firestore) return;
     
+    if (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060')) {
+      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para los proyectos de ejemplo." });
+      return;
+    }
+
     try {
       const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
       await setDoc(docRef, updatedMilestone, { merge: true });
