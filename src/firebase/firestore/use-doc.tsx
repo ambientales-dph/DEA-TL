@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { onSnapshot, DocumentReference, DocumentData } from 'firebase/firestore';
+import { onSnapshot, DocumentReference, DocumentData, DocumentSnapshot } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
-export const useDoc = (ref: DocumentReference | null) => {
-  const [data, setData] = useState<DocumentData | null>(null);
+export const useDoc = <T extends DocumentData>(ref: DocumentReference<T> | null) => {
+  const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -14,7 +14,7 @@ export const useDoc = (ref: DocumentReference | null) => {
     if (!ref) {
       setData(null);
       setLoading(false);
-      return () => {};
+      return;
     }
 
     setLoading(true);
@@ -22,16 +22,16 @@ export const useDoc = (ref: DocumentReference | null) => {
 
     const unsubscribe = onSnapshot(
       ref,
-      (doc) => {
+      (doc: DocumentSnapshot<T>) => {
         if (doc.exists()) {
-          setData({ id: doc.id, ...doc.data() });
+          setData({ ...doc.data(), id: doc.id });
         } else {
           setData(null);
         }
         setLoading(false);
       },
       (err) => {
-        console.error("Error in useDoc:", err);
+        console.error("Firestore Error (useDoc):", err);
         const permissionError = new FirestorePermissionError({
           path: ref.path,
           operation: 'get',

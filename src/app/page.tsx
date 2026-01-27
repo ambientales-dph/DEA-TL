@@ -21,6 +21,8 @@ import { RSA060_MILESTONES } from '@/lib/rsa060-data';
 import { FeedbackButton } from '@/components/feedback-button';
 import { FeedbackDialog } from '@/components/feedback-dialog';
 import { TrelloSummary } from '@/components/trello-summary';
+import { useFirestore, useCollection } from '@/firebase';
+import { collection, doc, setDoc, addDoc, getDocs, writeBatch } from 'firebase/firestore';
 
 const DEFAULT_CATEGORY_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
 
@@ -36,7 +38,6 @@ export default function Home() {
   const [dateRange, setDateRange] = React.useState<{ start: Date; end: Date } | null>(null);
   const [selectedMilestone, setSelectedMilestone] = React.useState<Milestone | null>(null);
   const [selectedCard, setSelectedCard] = React.useState<TrelloCardBasic | null>(null);
-  const [internalLoading, setInternalLoading] = React.useState(false);
   const [isUploadOpen, setIsUploadOpen] = React.useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = React.useState(false);
   const [isTrelloSummaryOpen, setIsTrelloSummaryOpen] = React.useState(false);
@@ -44,11 +45,21 @@ export default function Home() {
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
   const [hasLoadedFromUrl, setHasLoadedFromUrl] = React.useState(false);
   const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
-  const [localMilestones, setLocalMilestones] = React.useState<Milestone[]>([]);
   
-  const milestones = localMilestones;
-  const isLoadingTimeline = internalLoading;
+  const firestore = useFirestore();
+  const syncPerformedForCard = React.useRef<string | null>(null);
 
+  // Memoize the Firestore query to prevent re-renders
+  const milestonesCollection = React.useMemo(() => {
+    if (!firestore || !selectedCard) return null;
+    return collection(firestore, 'projects', selectedCard.id, 'milestones');
+  }, [firestore, selectedCard]);
+
+  // Hook to get real-time updates from Firestore
+  const { data: milestones, loading: firestoreLoading } = useCollection(milestonesCollection);
+
+  const isLoadingTimeline = firestoreLoading;
+  
   // Resizing state
   const [isResizing, setIsResizing] = React.useState(false);
   const [timelinePanelHeight, setTimelinePanelHeight] = React.useState(40); // Initial percentage
@@ -100,130 +111,114 @@ export default function Home() {
 
   const handleCardSelect = React.useCallback(async (card: TrelloCardBasic | null) => {
     setSelectedCard(card);
-    setSelectedMilestone(null); 
-    
-    if (!card) {
-      setLocalMilestones([]);
-      return;
-    }
-    
-    setInternalLoading(true);
-
-    try {
-        const cardNameLower = card.name.toLowerCase();
-        const isRsb002Card = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002');
-        const isRsa060Card = cardNameLower.includes('rsa060');
-        
-        if (isRsb002Card || isRsa060Card) {
-            const localData = isRsb002Card ? RSB002_MILESTONES : RSA060_MILESTONES;
-            const categoriesMap = new Map(categories.map(c => [c.id, c]));
-            const milestonesWithCategory = localData.map(m => ({
-              ...m,
-              category: categoriesMap.get(m.category.id) || m.category,
-              tags: ['hito-ejemplo'],
-            }));
-            setLocalMilestones(milestonesWithCategory);
+    setSelectedMilestone(null);
+  }, []);
+  
+  // Effect to sync Trello data to Firestore (runs ONCE per card load)
+  React.useEffect(() => {
+    const syncTrelloToFirestore = async () => {
+        if (!selectedCard || !firestore || syncPerformedForCard.current === selectedCard.id) {
             return;
         }
-    
-        const systemCategory = categories.find(c => c.id === 'cat-sistema') || { id: 'cat-sistema', name: 'Sistema', color: '#000000' };
 
-        const creationDate = getTrelloObjectCreationDate(card.id);
-        const creationMilestone: Milestone = {
-          id: `hito-creacion-${card.id}`,
-          name: 'Ingreso al sistema',
-          description: `La tarjeta de Trello fue creada en esta fecha.`,
-          occurredAt: creationDate.toISOString(),
-          category: systemCategory,
-          tags: ['sistema', 'creación'],
-          associatedFiles: [],
-          isImportant: false,
-          history: [`${format(new Date(), "PPpp", { locale: es })} - Hito de creación generado automáticamente.`],
-        };
+        // --- Demo Data Handling ---
+        const cardNameLower = selectedCard.name.toLowerCase();
+        const isRsb002Card = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002');
+        const isRsa060Card = cardNameLower.includes('rsa060');
 
-        const attachments = await getCardAttachments(card.id);
-        const defaultCategory = categories.find(c => c.name.toLowerCase().includes('trello')) || CATEGORIES[1];
+        if (isRsb002Card || isRsa060Card) {
+            // These are demo projects, we shouldn't sync them to Firestore.
+            // We just mark the "sync" as done to prevent further attempts.
+            syncPerformedForCard.current = selectedCard.id;
+            return;
+        }
 
-        const attachmentMilestones: Milestone[] = attachments.map(att => {
-            const fileType: AssociatedFile['type'] = 
-                att.mimeType.startsWith('image/') ? 'image' : 
-                att.mimeType.startsWith('video/') ? 'video' :
-                att.mimeType.startsWith('audio/') ? 'audio' :
-                ['application/pdf', 'application/msword', 'text/plain'].some(t => att.mimeType.includes(t)) ? 'document' : 'other';
-            
-            const associatedFile: AssociatedFile = {
-                id: `file-${att.id}`,
-                name: att.fileName,
-                size: `${(att.bytes / 1024).toFixed(2)} KB`,
-                type: fileType
-            };
-            
-            const creationLog = `${format(new Date(), "PPpp", { locale: es })} - Creación desde Trello.`;
-
-            return {
-                id: `hito-${att.id}`,
-                name: att.fileName,
-                description: `Archivo adjuntado a la tarjeta de Trello el ${new Date(att.date).toLocaleDateString()}.`,
-                occurredAt: att.date,
-                category: defaultCategory,
-                tags: ['adjunto'],
-                associatedFiles: [associatedFile],
-                isImportant: false,
-                history: [creationLog],
-            };
-        });
-
-        const actions = await getCardActions(card.id);
-        const commentsCategory = categories.find(c => c.id === 'cat-10') || { id: 'cat-10', name: 'Comentarios', color: '#607D8B' };
-        const activityCategory = categories.find(c => c.id === 'cat-11') || { id: 'cat-11', name: 'Actividad de Tarjeta', color: '#9E9E9E' };
-
-        const actionMilestones: Milestone[] = actions.map(action => {
-            const creationLog = `${format(new Date(), "PPpp", { locale: es })} - Creación desde actividad de Trello.`;
-            let milestone: Milestone | null = null;
-            
-            if (action.type === 'commentCard' && action.data.text) {
-                milestone = {
-                    id: `hito-${action.id}`,
-                    name: `Comentario de ${action.memberCreator.fullName}`,
-                    description: action.data.text,
-                    occurredAt: action.date,
-                    category: commentsCategory,
-                    tags: ['comentario'],
-                    associatedFiles: [],
-                    isImportant: false,
-                    history: [creationLog],
-                };
-            } else if (action.type === 'updateCard' && action.data.listAfter && action.data.listBefore) {
-                milestone = {
-                    id: `hito-${action.id}`,
-                    name: `Tarjeta movida`,
-                    description: `Movida de "${action.data.listBefore.name}" a "${action.data.listAfter.name}" por ${action.memberCreator.fullName}.`,
-                    occurredAt: action.date,
-                    category: activityCategory,
-                    tags: ['actividad', 'movimiento'],
-                    associatedFiles: [],
-                    isImportant: false,
-                    history: [creationLog],
-                };
-            }
-            
-            return milestone;
-        }).filter((m): m is Milestone => m !== null);
+        // Mark that we are starting the sync to prevent re-runs
+        syncPerformedForCard.current = selectedCard.id;
         
-        const trelloMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
-        setLocalMilestones(trelloMilestones);
+        try {
+            console.log(`Syncing Trello data for card ${selectedCard.id} to Firestore...`);
 
-    } catch(error) {
-        console.error("Failed to process card and sync with Trello:", error);
-        toast({
-            variant: "destructive",
-            title: "Error al sincronizar con Trello",
-            description: "No se pudieron cargar los datos de la tarjeta. Revisa tu conexión y las credenciales de Trello.",
-        });
-    } finally {
-        setInternalLoading(false);
-    }
-  }, [categories]);
+            // 1. Fetch all necessary data from Trello
+            const [attachments, actions] = await Promise.all([
+                getCardAttachments(selectedCard.id),
+                getCardActions(selectedCard.id),
+            ]);
+
+            // 2. Get existing milestones from Firestore ONCE to avoid loops
+            const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
+            const existingDocsSnapshot = await getDocs(milestonesRef);
+            const existingMilestoneIds = new Set(existingDocsSnapshot.docs.map(d => d.id));
+
+            // 3. Transform Trello data into Milestone objects
+            const systemCategory = categories.find(c => c.id === 'cat-sistema') || { id: 'cat-sistema', name: 'Sistema', color: '#000000' };
+            const creationDate = getTrelloObjectCreationDate(selectedCard.id);
+            const creationMilestone: Milestone = {
+              id: `hito-creacion-${selectedCard.id}`,
+              name: 'Ingreso al sistema',
+              description: `La tarjeta de Trello fue creada en esta fecha.`,
+              occurredAt: creationDate.toISOString(),
+              category: systemCategory,
+              tags: ['sistema', 'creación'],
+              associatedFiles: [],
+              isImportant: false,
+              history: [`${format(new Date(), "PPpp", { locale: es })} - Hito de creación generado automáticamente.`],
+            };
+
+            const defaultCategory = categories.find(c => c.name.toLowerCase().includes('trello')) || CATEGORIES[1];
+            const attachmentMilestones: Milestone[] = attachments.map(att => {
+              const fileType: AssociatedFile['type'] = att.mimeType.startsWith('image/') ? 'image' : att.mimeType.startsWith('video/') ? 'video' : att.mimeType.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => att.mimeType.includes(t)) ? 'document' : 'other';
+              const associatedFile: AssociatedFile = { id: `file-${att.id}`, name: att.fileName, size: `${(att.bytes / 1024).toFixed(2)} KB`, type: fileType };
+              return {
+                  id: `hito-${att.id}`,
+                  name: att.fileName,
+                  description: `Archivo adjuntado a la tarjeta de Trello el ${new Date(att.date).toLocaleDateString()}.`,
+                  occurredAt: att.date,
+                  category: defaultCategory, tags: ['adjunto'], associatedFiles: [associatedFile], isImportant: false,
+                  history: [`${format(new Date(), "PPpp", { locale: es })} - Creación desde Trello.`],
+              };
+            });
+            
+            const commentsCategory = categories.find(c => c.id === 'cat-10') || { id: 'cat-10', name: 'Comentarios', color: '#607D8B' };
+            const activityCategory = categories.find(c => c.id === 'cat-11') || { id: 'cat-11', name: 'Actividad de Tarjeta', color: '#9E9E9E' };
+
+            const actionMilestones: Milestone[] = actions.map(action => {
+                let milestone: Milestone | null = null;
+                if (action.type === 'commentCard' && action.data.text) {
+                    milestone = { id: `hito-${action.id}`, name: `Comentario de ${action.memberCreator.fullName}`, description: action.data.text, occurredAt: action.date, category: commentsCategory, tags: ['comentario'], associatedFiles: [], isImportant: false, history: [`${format(new Date(), "PPpp", { locale: es })} - Creación desde actividad de Trello.`] };
+                } else if (action.type === 'updateCard' && action.data.listAfter && action.data.listBefore) {
+                    milestone = { id: `hito-${action.id}`, name: `Tarjeta movida`, description: `Movida de "${action.data.listBefore.name}" a "${action.data.listAfter.name}" por ${action.memberCreator.fullName}.`, occurredAt: action.date, category: activityCategory, tags: ['actividad', 'movimiento'], associatedFiles: [], isImportant: false, history: [`${format(new Date(), "PPpp", { locale: es })} - Creación desde actividad de Trello.`] };
+                }
+                return milestone;
+            }).filter((m): m is Milestone => m !== null);
+
+            const allTrelloMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
+            
+            // 4. Filter out milestones that are already in the database
+            const newMilestonesToSync = allTrelloMilestones.filter(m => !existingMilestoneIds.has(m.id));
+
+            // 5. Batch write the new milestones to Firestore
+            if (newMilestonesToSync.length > 0) {
+                const batch = writeBatch(firestore);
+                newMilestonesToSync.forEach(milestone => {
+                    const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestone.id);
+                    batch.set(milestoneRef, milestone);
+                });
+                await batch.commit();
+                toast({ title: "Sincronización completa", description: `Se guardaron ${newMilestonesToSync.length} nuevos hitos desde Trello.` });
+            }
+
+        } catch (error) {
+            console.error("Error during Trello to Firestore sync:", error);
+            toast({ variant: 'destructive', title: 'Error de Sincronización', description: 'No se pudieron sincronizar los datos de Trello con Firestore.' });
+            // Reset ref on error to allow a re-try
+            syncPerformedForCard.current = null;
+        }
+    };
+
+    syncTrelloToFirestore();
+}, [selectedCard, firestore, categories]);
+
 
   React.useEffect(() => {
     if (isLoaded && !hasLoadedFromUrl) {
@@ -233,28 +228,17 @@ export default function Home() {
       if (cardId) {
         setHasLoadedFromUrl(true);
         const loadCardFromUrl = async () => {
-          setInternalLoading(true);
           try {
             const card = await getCardById(cardId);
             if (card) {
-              setCardFromUrl(card); // This triggers sidebar to select board/list
-              handleCardSelect(card);   // This loads the data
+              setCardFromUrl(card);
+              handleCardSelect(card);
             } else {
-              toast({
-                variant: "destructive",
-                title: "Tarjeta no encontrada",
-                description: `No se pudo encontrar una tarjeta de Trello con el ID: ${cardId}`,
-              });
+              toast({ variant: "destructive", title: "Tarjeta no encontrada", description: `No se pudo encontrar una tarjeta de Trello con el ID: ${cardId}` });
             }
           } catch (error) {
             console.error("Failed to load card from URL", error);
-            toast({
-              variant: "destructive",
-              title: "Error al cargar tarjeta",
-              description: "Hubo un problema al intentar cargar la tarjeta desde la URL.",
-            });
-          } finally {
-            setInternalLoading(false);
+            toast({ variant: "destructive", title: "Error al cargar tarjeta", description: "Hubo un problema al intentar cargar la tarjeta desde la URL." });
           }
         };
         loadCardFromUrl();
@@ -262,9 +246,19 @@ export default function Home() {
     }
   }, [isLoaded, hasLoadedFromUrl, handleCardSelect]);
 
+  const displayedMilestones = React.useMemo(() => {
+    if (selectedCard) {
+        const cardNameLower = selectedCard.name.toLowerCase();
+        if (cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002')) return RSB002_MILESTONES;
+        if (cardNameLower.includes('rsa060')) return RSA060_MILESTONES;
+    }
+    return milestones || [];
+  }, [selectedCard, milestones]);
+
+
   React.useEffect(() => {
-    if (milestones.length > 0) {
-      const allDates = milestones.map(m => parseISO(m.occurredAt));
+    if (displayedMilestones.length > 0) {
+      const allDates = displayedMilestones.map(m => parseISO(m.occurredAt));
       const oldest = new Date(Math.min(...allDates.map(d => d.getTime())));
       const newest = new Date(Math.max(...allDates.map(d => d.getTime())));
       const newBounds = { start: oldest.toISOString(), end: newest.toISOString() };
@@ -277,12 +271,14 @@ export default function Home() {
         milestoneDateBounds.current = null;
         setDateRange(null);
     }
-  }, [milestones]);
+  }, [displayedMilestones]);
 
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
-    if (selectedCard && (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060'))) {
-      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para los proyectos de ejemplo." });
-      return;
+    if (!firestore || !selectedCard) return;
+
+    if ((selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060') || selectedCard.name.toLowerCase().includes('rlu002'))) {
+        toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para los proyectos de ejemplo." });
+        return;
     }
 
     const { files, categoryId, name, description, occurredAt } = data;
@@ -298,10 +294,8 @@ export default function Home() {
       size: `${(file.size / 1024).toFixed(2)} KB`,
       type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
     }));
-
-    const creationLog = `${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`;
-    const newMilestone: Milestone = {
-        id: `hito-local-${Date.now()}`,
+    
+    const newMilestoneData = {
         name: name,
         description: description,
         occurredAt: occurredAt.toISOString(),
@@ -309,13 +303,41 @@ export default function Home() {
         tags: ['manual'],
         associatedFiles: associatedFiles,
         isImportant: false,
-        history: [creationLog],
+        history: [`${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`],
     };
-    
-    setLocalMilestones(prev => [...prev, newMilestone]);
-    setIsUploadOpen(false);
-    toast({ title: "Hito creado", description: "El nuevo hito ha sido agregado localmente." });
-  }, [categories, selectedCard]);
+
+    try {
+        const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
+        await addDoc(milestonesRef, newMilestoneData);
+        setIsUploadOpen(false);
+        toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
+    } catch(error) {
+        console.error("Error creating milestone:", error);
+        toast({ variant: "destructive", title: "Error al guardar", description: "No se pudo guardar el hito en la base de datos." });
+    }
+  }, [categories, selectedCard, firestore]);
+
+  const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
+    if (!firestore || !selectedCard) return;
+
+    if ((selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060') || selectedCard.name.toLowerCase().includes('rlu002'))) {
+      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para los proyectos de ejemplo." });
+      return;
+    }
+
+    try {
+        const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
+        await setDoc(milestoneRef, updatedMilestone, { merge: true });
+        
+        if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
+            setSelectedMilestone(updatedMilestone);
+        }
+        toast({ title: "Hito actualizado", description: "Los cambios se guardaron correctamente." });
+    } catch (error) {
+        console.error("Error updating milestone:", error);
+        toast({ variant: "destructive", title: "Error al actualizar", description: "No se pudieron guardar los cambios en la base de datos." });
+    }
+  }, [selectedCard, selectedMilestone, firestore]);
 
 
   const handleSetRange = React.useCallback((rangeType: '1D' | '1M' | '1Y' | 'All') => {
@@ -340,15 +362,15 @@ export default function Home() {
   }, []);
   
   const handleGoHome = React.useCallback(() => {
-    setLocalMilestones([]);
     setSelectedCard(null);
     setSelectedMilestone(null);
     setSearchTerm('');
     setView('timeline');
     setCardFromUrl(null);
+    syncPerformedForCard.current = null;
   }, []);
 
-  const filteredMilestones = milestones
+  const filteredMilestones = (displayedMilestones || [])
     .filter(milestone => {
       const term = searchTerm.toLowerCase();
       if (!term) return true;
@@ -373,25 +395,12 @@ export default function Home() {
   }, []);
   
   const handleCategoryDelete = React.useCallback((categoryId: string) => {
-    if (milestones.some(m => m.category.id === categoryId)) {
+    if (displayedMilestones.some(m => m.category.id === categoryId)) {
       toast({ variant: "destructive", title: "Categoría en uso", description: "No se puede eliminar una categoría que está asignada a uno o más hitos." });
       return;
     }
     setCategories(prev => prev.filter(c => c.id !== categoryId));
-  }, [milestones]);
-
-  const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
-    if (selectedCard && (selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060'))) {
-      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para los proyectos de ejemplo." });
-      return;
-    }
-
-    setLocalMilestones(prev => prev.map(m => m.id === updatedMilestone.id ? updatedMilestone : m));
-    
-    if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
-        setSelectedMilestone(updatedMilestone);
-    }
-  }, [selectedCard, selectedMilestone]);
+  }, [displayedMilestones]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -478,10 +487,10 @@ export default function Home() {
                         <Loader2 className="h-12 w-12 animate-spin text-primary" />
                         <h2 className="text-2xl font-medium font-headline mt-4">Cargando línea de tiempo...</h2>
                         <p className="mt-2 text-muted-foreground">
-                            Sincronizando con Trello.
+                            Conectando con la base de datos.
                         </p>
                     </div>
-                ) : milestones.length > 0 && dateRange ? (
+                ) : displayedMilestones.length > 0 && dateRange ? (
                     <div className="h-full w-full">
                         <Timeline 
                             milestones={filteredMilestones} 
