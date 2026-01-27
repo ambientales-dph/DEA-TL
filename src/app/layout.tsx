@@ -1,7 +1,8 @@
 import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
-import { AuthProvider } from '@/context/auth-context';
+import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 
 export const metadata: Metadata = {
   title: 'DEA TL',
@@ -17,10 +18,11 @@ export default function RootLayout({
     <html lang="es">
       <head />
       <body className="antialiased font-sans">
-          <AuthProvider>
+          <FirebaseClientProvider>
             {children}
             <Toaster />
-          </AuthProvider>
+            <FirebaseErrorListener />
+          </FirebaseClientProvider>
       </body>
     </html>
   );

@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "associatedFile": {
+      "title": "Associated File",
+      "description": "A file associated with a milestone.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "size": { "type": "string" },
+        "type": { "type": "string", "enum": ["document", "image", "video", "audio", "other"] }
+      },
+      "required": ["id", "name", "size", "type"]
+    },
+    "category": {
+      "title": "Category",
+      "description": "A category for a milestone.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name", "color"]
+    },
+    "milestone": {
+      "title": "Milestone",
+      "description": "A specific point in a project's timeline.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "category": { "$ref": "#/backend/entities/category" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "associatedFiles": { "type": "array", "items": { "$ref": "#/backend/entities/associatedFile" } },
+        "isImportant": { "type": "boolean" },
+        "history": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "name", "description", "occurredAt", "category", "isImportant", "history"]
+    },
+    "userProfile": {
+      "title": "User Profile",
+      "description": "A user's profile.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string", "format": "uri" }
+      },
+      "required": ["uid"]
+    }
+  },
+  "auth": {
+    "providers": []
+  },
+  "firestore": {
+    "/projects/{projectId}/milestones/{milestoneId}": {
+      "schema": { "$ref": "#/backend/entities/milestone" },
+      "description": "Stores milestones for a specific project."
+    }
+  }
+}

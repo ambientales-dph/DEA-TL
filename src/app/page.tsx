@@ -12,12 +12,6 @@ import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format 
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { getCardAttachments, type TrelloCardBasic, getCardById, getCardActions, type TrelloAction } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
@@ -27,6 +21,10 @@ import { RSA060_MILESTONES } from '@/lib/rsa060-data';
 import { FeedbackButton } from '@/components/feedback-button';
 import { FeedbackDialog } from '@/components/feedback-dialog';
 import { TrelloSummary } from '@/components/trello-summary';
+import { useCollection, useFirestore } from '@/firebase';
+import { collection, doc, getDocs, query, writeBatch, setDoc, orderBy } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const DEFAULT_CATEGORY_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
 
@@ -37,13 +35,12 @@ function getTrelloObjectCreationDate(trelloId: string): Date {
 }
 
 export default function Home() {
-  const [milestones, setMilestones] = React.useState<Milestone[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [dateRange, setDateRange] = React.useState<{ start: Date; end: Date } | null>(null);
   const [selectedMilestone, setSelectedMilestone] = React.useState<Milestone | null>(null);
   const [selectedCard, setSelectedCard] = React.useState<TrelloCardBasic | null>(null);
-  const [isLoadingTimeline, setIsLoadingTimeline] = React.useState(false);
+  const [internalLoading, setInternalLoading] = React.useState(false);
   const [isUploadOpen, setIsUploadOpen] = React.useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = React.useState(false);
   const [isTrelloSummaryOpen, setIsTrelloSummaryOpen] = React.useState(false);
@@ -51,6 +48,27 @@ export default function Home() {
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
   const [hasLoadedFromUrl, setHasLoadedFromUrl] = React.useState(false);
   const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
+  const [localMilestones, setLocalMilestones] = React.useState<Milestone[]>([]);
+  
+  const firestore = useFirestore();
+
+  const milestonesQuery = React.useMemo(() => {
+    if (!firestore || !selectedCard || selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060')) {
+      return null;
+    }
+    return query(collection(firestore, 'projects', selectedCard.id, 'milestones'), orderBy('occurredAt', 'desc'));
+  }, [firestore, selectedCard]);
+
+  const { data: firestoreMilestones, loading: isLoadingFromDb } = useCollection(milestonesQuery);
+
+  const milestones = React.useMemo(() => {
+    if (selectedCard?.name.toLowerCase().includes('rsb002') || selectedCard?.name.toLowerCase().includes('rsa060')) {
+      return localMilestones;
+    }
+    return (firestoreMilestones as Milestone[]) || [];
+  }, [firestoreMilestones, localMilestones, selectedCard]);
+
+  const isLoadingTimeline = isLoadingFromDb || internalLoading;
 
   // Resizing state
   const [isResizing, setIsResizing] = React.useState(false);
@@ -58,7 +76,6 @@ export default function Home() {
   const resizeContainerRef = React.useRef<HTMLDivElement>(null);
   const milestoneDateBounds = React.useRef<{start: string; end: string} | null>(null);
 
-  // Load state from localStorage on initial mount
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -68,29 +85,19 @@ export default function Home() {
         let finalCategories: Category[];
 
         if (parsedCategories) {
-          // We have saved categories. Let's merge them with the defaults to get new additions.
           const defaultCategoriesMap = new Map(CATEGORIES.map(c => [c.id, c]));
           const parsedCategoriesMap = new Map(parsedCategories.map(c => [c.id, c]));
-
-          // Start with the default categories, but update them with any user changes (like color)
           const mergedBaseCategories = CATEGORIES.map(defaultCat => {
             return parsedCategoriesMap.get(defaultCat.id) || defaultCat;
           });
-
-          // Now, add any truly custom categories the user created themselves
           const customUserCategories = parsedCategories.filter(parsedCat => !defaultCategoriesMap.has(parsedCat.id));
-
           finalCategories = [...mergedBaseCategories, ...customUserCategories];
-
         } else {
-          // No saved data, just use the defaults from the code.
           finalCategories = [...CATEGORIES];
         }
         
-        // Final cleanup: remove the old hardcoded 'cat-rsb002' if it somehow slipped in
         finalCategories = finalCategories.filter(c => c.id !== 'cat-rsb002' && c.id !== 'cat-sistema');
         
-        // Ensure system category exists
         if (!finalCategories.some(c => c.id === 'cat-sistema')) {
           finalCategories.push({ id: 'cat-sistema', name: 'Sistema', color: '#000000' });
         }
@@ -101,21 +108,11 @@ export default function Home() {
           console.error("Failed to load or merge categories from localStorage", error);
           setCategories(CATEGORIES);
       } finally {
-        // Milestones always start empty to ensure a clean slate.
-        setMilestones([]);
         setIsLoaded(true);
       }
     }
-  }, []); // Empty dependency array ensures this runs once on mount.
+  }, []);
 
-  // Save milestones to localStorage whenever they change
-  React.useEffect(() => {
-    if (isLoaded && typeof window !== 'undefined') {
-      localStorage.setItem('deas-tl-milestones', JSON.stringify(milestones));
-    }
-  }, [milestones, isLoaded]);
-
-  // Save categories to localStorage whenever they change
   React.useEffect(() => {
     if (isLoaded && typeof window !== 'undefined') {
       localStorage.setItem('deas-tl-categories', JSON.stringify(categories));
@@ -124,45 +121,37 @@ export default function Home() {
 
   const handleCardSelect = React.useCallback(async (card: TrelloCardBasic | null) => {
     setSelectedCard(card);
-    setSelectedMilestone(null); // Always close detail panel when changing card
+    setSelectedMilestone(null); 
     
-    // Case 1: No card is selected. Clear everything and show welcome screen.
     if (!card) {
-      setMilestones([]);
-      setIsLoadingTimeline(false);
+      setLocalMilestones([]);
       return;
     }
+    
+    setInternalLoading(true);
 
     const cardNameLower = card.name.toLowerCase();
-
-    // Case 2: A special local data card is selected (RSB002 or RSA060).
     const isRsb002Card = cardNameLower.includes('rsb002');
     const isRsa060Card = cardNameLower.includes('rsa060');
     
     if (isRsb002Card || isRsa060Card) {
-        setIsLoadingTimeline(true);
-        const localMilestones = isRsb002Card ? RSB002_MILESTONES : RSA060_MILESTONES;
-
+        const localData = isRsb002Card ? RSB002_MILESTONES : RSA060_MILESTONES;
         const categoriesMap = new Map(categories.map(c => [c.id, c]));
-
-        // Map the hardcoded milestones to use the up-to-date category object from the main state
-        const milestonesWithCategory = localMilestones.map(m => {
-          const freshCategory = categoriesMap.get(m.category.id) || m.category;
-          return {
-            ...m,
-            category: freshCategory,
-            tags: ['hito-ejemplo'], // Generic tag
-          };
-        });
-        
-        setMilestones(milestonesWithCategory);
-        
-        setIsLoadingTimeline(false);
+        const milestonesWithCategory = localData.map(m => ({
+          ...m,
+          category: categoriesMap.get(m.category.id) || m.category,
+          tags: ['hito-ejemplo'],
+        }));
+        setLocalMilestones(milestonesWithCategory);
+        setInternalLoading(false);
         return;
     }
     
-    // Case 3: Any other Trello card is selected.
-    setIsLoadingTimeline(true);
+    if (!firestore) {
+        setInternalLoading(false);
+        return;
+    }
+
     try {
         const systemCategory = categories.find(c => c.id === 'cat-sistema') || { id: 'cat-sistema', name: 'Sistema', color: '#000000' };
 
@@ -248,44 +237,69 @@ export default function Home() {
             return milestone;
         }).filter((m): m is Milestone => m !== null);
         
-        const allMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
-        setMilestones(allMilestones);
+        const trelloMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
 
+        const milestonesRef = collection(firestore, 'projects', card.id, 'milestones');
+        const existingMilestonesSnap = await getDocs(milestonesRef);
+        const existingMilestonesMap = new Map(existingMilestonesSnap.docs.map(doc => [doc.id, doc.data() as Milestone]));
+
+        const batch = writeBatch(firestore);
+        let writeCount = 0;
+
+        trelloMilestones.forEach(trelloMilestone => {
+            if (!existingMilestonesMap.has(trelloMilestone.id)) {
+                const docRef = doc(firestore, 'projects', card.id, 'milestones', trelloMilestone.id);
+                batch.set(docRef, trelloMilestone);
+                writeCount++;
+            }
+        });
+
+        if (writeCount > 0) {
+            batch.commit().catch(async (serverError) => {
+              const permissionError = new FirestorePermissionError({
+                  path: `projects/${card.id}/milestones`,
+                  operation: 'create',
+                  requestResourceData: { note: `${writeCount} new milestones from Trello` },
+              });
+              errorEmitter.emit('permission-error', permissionError);
+            });
+            toast({
+                title: "Nuevos hitos sincronizados",
+                description: `Se guardaron ${writeCount} nuevos hitos desde Trello.`,
+            });
+        }
     } catch(error) {
-        console.error("Failed to process card attachments:", error);
-        setMilestones([]); // Clear milestones on error
+        console.error("Failed to process card and sync with Firestore:", error);
         toast({
             variant: "destructive",
             title: "Error al cargar hitos",
-            description: "No se pudieron obtener los datos de la tarjeta de Trello."
+            description: "No se pudieron obtener o guardar los datos de la tarjeta de Trello."
         });
     } finally {
-        setIsLoadingTimeline(false);
+        setInternalLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categories]);
+  }, [categories, firestore]);
 
-  // This effect will run once on page load to check for a cardId in the URL
   React.useEffect(() => {
     if (isLoaded && !hasLoadedFromUrl) {
       const urlParams = new URLSearchParams(window.location.search);
       const cardId = urlParams.get('cardId');
   
       if (cardId) {
-        setHasLoadedFromUrl(true); // Mark that we've processed the URL param
+        setHasLoadedFromUrl(true);
         const loadCardFromUrl = async () => {
-          setIsLoadingTimeline(true);
+          setInternalLoading(true);
           try {
             const card = await getCardById(cardId);
             if (card) {
-              setCardFromUrl(card);
+              setCardFromUrl(card); // This triggers sidebar to select board/list
+              handleCardSelect(card);   // This loads the data
             } else {
               toast({
                 variant: "destructive",
                 title: "Tarjeta no encontrada",
                 description: `No se pudo encontrar una tarjeta de Trello con el ID: ${cardId}`,
               });
-               setIsLoadingTimeline(false);
             }
           } catch (error) {
             console.error("Failed to load card from URL", error);
@@ -294,69 +308,48 @@ export default function Home() {
               title: "Error al cargar tarjeta",
               description: "Hubo un problema al intentar cargar la tarjeta desde la URL.",
             });
-            setIsLoadingTimeline(false);
+          } finally {
+            setInternalLoading(false);
           }
         };
         loadCardFromUrl();
       }
     }
-  }, [isLoaded, hasLoadedFromUrl]);
-
+  }, [isLoaded, hasLoadedFromUrl, handleCardSelect]);
 
   React.useEffect(() => {
     if (milestones.length > 0) {
       const allDates = milestones.map(m => parseISO(m.occurredAt));
       const oldest = new Date(Math.min(...allDates.map(d => d.getTime())));
       const newest = new Date(Math.max(...allDates.map(d => d.getTime())));
-
       const newBounds = { start: oldest.toISOString(), end: newest.toISOString() };
-
       const hasBoundsChanged = newBounds.start !== milestoneDateBounds.current?.start || newBounds.end !== milestoneDateBounds.current?.end;
-      
       if (hasBoundsChanged) {
         milestoneDateBounds.current = newBounds;
-        setDateRange({
-          start: subMonths(oldest, 1),
-          end: addMonths(newest, 1),
-        });
+        setDateRange({ start: subMonths(oldest, 1), end: addMonths(newest, 1) });
       }
     } else {
         milestoneDateBounds.current = null;
         setDateRange(null);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [milestones]);
 
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
+    if (!selectedCard || !firestore) return;
+    
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find(c => c.id === categoryId);
     if (!category) {
-        toast({
-            variant: "destructive",
-            title: "Error al crear hito",
-            description: "La categoría seleccionada no es válida.",
-        });
+        toast({ variant: "destructive", title: "Error al crear hito", description: "La categoría seleccionada no es válida." });
         return;
     };
 
-    const associatedFiles: AssociatedFile[] = [];
-    if (files && files.length > 0) {
-      files.forEach(file => {
-        const fileType: AssociatedFile['type'] = 
-            file.type.startsWith('image/') ? 'image' : 
-            file.type.startsWith('video/') ? 'video' :
-            file.type.startsWith('audio/') ? 'audio' :
-            ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other';
-        
-        const associatedFile: AssociatedFile = {
-            id: `file-local-${Date.now()}-${file.name}`,
-            name: file.name,
-            size: `${(file.size / 1024).toFixed(2)} KB`,
-            type: fileType
-        };
-        associatedFiles.push(associatedFile);
-      });
-    }
+    const associatedFiles: AssociatedFile[] = (files || []).map(file => ({
+      id: `file-local-${Date.now()}-${file.name}`,
+      name: file.name,
+      size: `${(file.size / 1024).toFixed(2)} KB`,
+      type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
+    }));
 
     const creationLog = `${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`;
     const newMilestone: Milestone = {
@@ -365,40 +358,40 @@ export default function Home() {
         description: description,
         occurredAt: occurredAt.toISOString(),
         category: category,
-        tags: ['manual'], // Generic tag
+        tags: ['manual'],
         associatedFiles: associatedFiles,
         isImportant: false,
         history: [creationLog],
     };
-
-    setMilestones(prev => [...prev, newMilestone]);
-    setIsUploadOpen(false);
-    toast({
-        title: "Hito creado",
-        description: "El nuevo hito ha sido añadido a la línea de tiempo.",
-    });
-  }, [categories]);
+    
+    const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', newMilestone.id);
+    setDoc(docRef, newMilestone)
+      .then(() => {
+        setIsUploadOpen(false);
+        toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
+      })
+      .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'create',
+          requestResourceData: newMilestone,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      });
+  }, [categories, firestore, selectedCard]);
 
 
   const handleSetRange = React.useCallback((rangeType: '1D' | '1M' | '1Y' | 'All') => {
     if (rangeType === 'All') {
         if (milestoneDateBounds.current) {
-            setDateRange({
-                start: subMonths(parseISO(milestoneDateBounds.current.start), 1),
-                end: addMonths(parseISO(milestoneDateBounds.current.end), 1),
-            });
+            setDateRange({ start: subMonths(parseISO(milestoneDateBounds.current.start), 1), end: addMonths(parseISO(milestoneDateBounds.current.end), 1) });
         }
         return;
     }
-    
     const now = new Date();
-    if (rangeType === '1D') {
-      setDateRange({ start: startOfDay(now), end: endOfDay(now) });
-    } else if (rangeType === '1M') {
-      setDateRange({ start: subMonths(now, 1), end: now });
-    } else if (rangeType === '1Y') {
-      setDateRange({ start: subYears(now, 1), end: now });
-    }
+    if (rangeType === '1D') setDateRange({ start: startOfDay(now), end: endOfDay(now) });
+    else if (rangeType === '1M') setDateRange({ start: subMonths(now, 1), end: now });
+    else if (rangeType === '1Y') setDateRange({ start: subYears(now, 1), end: now });
   }, []);
 
   const handleMilestoneClick = React.useCallback((milestone: Milestone) => {
@@ -410,7 +403,7 @@ export default function Home() {
   }, []);
   
   const handleGoHome = React.useCallback(() => {
-    setMilestones([]);
+    setLocalMilestones([]);
     setSelectedCard(null);
     setSelectedMilestone(null);
     setSearchTerm('');
@@ -421,96 +414,53 @@ export default function Home() {
   const filteredMilestones = milestones
     .filter(milestone => {
       const term = searchTerm.toLowerCase();
-      return (
-        milestone.name.toLowerCase().includes(term) ||
-        milestone.description.toLowerCase().includes(term) ||
-        milestone.category.name.toLowerCase().includes(term) ||
-        (milestone.tags && milestone.tags.some(tag => tag.toLowerCase().includes(term)))
-      );
+      if (!term) return true;
+      const normalizedTerm = term.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return [milestone.name, milestone.description, milestone.category.name, ...(milestone.tags || [])]
+        .some(text => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normalizedTerm));
     })
     .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
 
   const handleCategoryColorChange = React.useCallback((categoryId: string, color: string) => {
-    setCategories(prevCategories => {
-        const newCategories = prevCategories.map(c => 
-          c.id === categoryId ? { ...c, color } : c
-        );
-        
-        setMilestones(prevMilestones => prevMilestones.map(m => {
-          if (m.category.id === categoryId) {
-            const newCategory = newCategories.find(c => c.id === categoryId);
-            if (newCategory) {
-              return { ...m, category: newCategory };
-            }
-          }
-          return m;
-        }));
-
-        return newCategories;
-    });
+    setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, color } : c));
   }, []);
   
   const handleCategoryAdd = React.useCallback((name: string) => {
-    setCategories(prev => {
-        const newCategory: Category = {
-          id: `cat-${Date.now()}`,
-          name,
-          color: DEFAULT_CATEGORY_COLORS[prev.length % DEFAULT_CATEGORY_COLORS.length],
-        };
-        return [...prev, newCategory];
-    });
+    setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name, color: DEFAULT_CATEGORY_COLORS[prev.length % DEFAULT_CATEGORY_COLORS.length] }]);
   }, []);
 
   const handleCategoryUpdate = React.useCallback((categoryId: string, name: string) => {
     const newName = name.trim();
     if (!newName) return;
-
-    setCategories(prev => {
-      const newCategories = prev.map(c => 
-        c.id === categoryId ? { ...c, name: newName } : c
-      );
-      
-      // Also update milestones using this category
-      setMilestones(prevMilestones => prevMilestones.map(m => {
-        if (m.category.id === categoryId) {
-          const newCategory = newCategories.find(c => c.id === categoryId);
-          if (newCategory) {
-            return { ...m, category: newCategory };
-          }
-        }
-        return m;
-      }));
-
-      return newCategories;
-    });
+    setCategories(prev => prev.map(c => c.id === categoryId ? { ...c, name: newName } : c));
   }, []);
   
   const handleCategoryDelete = React.useCallback((categoryId: string) => {
-    const isCategoryInUse = milestones.some(m => m.category.id === categoryId);
-
-    if (isCategoryInUse) {
-      toast({
-        variant: "destructive",
-        title: "Categoría en uso",
-        description: "No se puede eliminar una categoría que está asignada a uno o más hitos.",
-      });
+    if (milestones.some(m => m.category.id === categoryId)) {
+      toast({ variant: "destructive", title: "Categoría en uso", description: "No se puede eliminar una categoría que está asignada a uno o más hitos." });
       return;
     }
-
     setCategories(prev => prev.filter(c => c.id !== categoryId));
   }, [milestones]);
 
   const handleMilestoneUpdate = React.useCallback((updatedMilestone: Milestone) => {
-    setMilestones(prevMilestones =>
-      prevMilestones.map(m =>
-        m.id === updatedMilestone.id ? updatedMilestone : m
-      )
-    );
-    // Also update the selected milestone if it's the one being edited
+    if (!selectedCard || !firestore) return;
+    
+    const docRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
+    setDoc(docRef, updatedMilestone, { merge: true })
+      .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'update',
+          requestResourceData: updatedMilestone,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      });
+
     if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
         setSelectedMilestone(updatedMilestone);
     }
-  }, [selectedMilestone]);
+  }, [selectedCard, firestore, selectedMilestone]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -520,38 +470,30 @@ export default function Home() {
   React.useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing || !resizeContainerRef.current) return;
-      
       const container = resizeContainerRef.current;
       const rect = container.getBoundingClientRect();
       const newHeight = e.clientY - rect.top;
       let newHeightPercent = (newHeight / rect.height) * 100;
-
       if (newHeightPercent < 20) newHeightPercent = 20;
       if (newHeightPercent > 80) newHeightPercent = 80;
-      
       setTimelinePanelHeight(newHeightPercent);
     };
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
+    const handleMouseUp = () => setIsResizing(false);
     if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
     }
-
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizing]);
 
   React.useEffect(() => {
     if (selectedCard) {
       const match = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
-      const projectCode = match ? match[0].toUpperCase() : selectedCard.name;
-      document.title = `DEA TL | ${projectCode}`;
+      document.title = `DEA TL | ${match ? match[0].toUpperCase() : selectedCard.name}`;
     } else {
       document.title = 'DEA TL';
     }
@@ -593,10 +535,7 @@ export default function Home() {
                   </h2>
               </div>
           )}
-          <div
-            ref={resizeContainerRef}
-            className="flex-1 flex flex-col overflow-hidden"
-          >
+          <div ref={resizeContainerRef} className="flex-1 flex flex-col overflow-hidden">
             {view === 'timeline' ? (
               <>
                 <main 
@@ -608,7 +547,7 @@ export default function Home() {
                         <Loader2 className="h-12 w-12 animate-spin text-primary" />
                         <h2 className="text-2xl font-medium font-headline mt-4">Cargando línea de tiempo...</h2>
                         <p className="mt-2 text-muted-foreground">
-                            Obteniendo los hitos desde Trello.
+                            Sincronizando con la base de datos.
                         </p>
                     </div>
                 ) : milestones.length > 0 && dateRange ? (
