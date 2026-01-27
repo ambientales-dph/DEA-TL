@@ -23,6 +23,8 @@ import { FeedbackDialog } from '@/components/feedback-dialog';
 import { TrelloSummary } from '@/components/trello-summary';
 import { useFirestore, useCollection } from '@/firebase';
 import { collection, doc, setDoc, addDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const DEFAULT_CATEGORY_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
 
@@ -52,6 +54,10 @@ export default function Home() {
   // Memoize the Firestore query to prevent re-renders
   const milestonesCollection = React.useMemo(() => {
     if (!firestore || !selectedCard) return null;
+    const cardNameLower = selectedCard.name.toLowerCase();
+    if (cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002') || cardNameLower.includes('rsa060')) {
+      return null;
+    }
     return collection(firestore, 'projects', selectedCard.id, 'milestones');
   }, [firestore, selectedCard]);
 
@@ -121,36 +127,28 @@ export default function Home() {
             return;
         }
 
-        // --- Demo Data Handling ---
         const cardNameLower = selectedCard.name.toLowerCase();
-        const isRsb002Card = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002');
-        const isRsa060Card = cardNameLower.includes('rsa060');
+        const isDemoProject = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002') || cardNameLower.includes('rsa060');
 
-        if (isRsb002Card || isRsa060Card) {
-            // These are demo projects, we shouldn't sync them to Firestore.
-            // We just mark the "sync" as done to prevent further attempts.
+        if (isDemoProject) {
             syncPerformedForCard.current = selectedCard.id;
             return;
         }
 
-        // Mark that we are starting the sync to prevent re-runs
         syncPerformedForCard.current = selectedCard.id;
         
         try {
             console.log(`Syncing Trello data for card ${selectedCard.id} to Firestore...`);
 
-            // 1. Fetch all necessary data from Trello
             const [attachments, actions] = await Promise.all([
                 getCardAttachments(selectedCard.id),
                 getCardActions(selectedCard.id),
             ]);
 
-            // 2. Get existing milestones from Firestore ONCE to avoid loops
             const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
             const existingDocsSnapshot = await getDocs(milestonesRef);
             const existingMilestoneIds = new Set(existingDocsSnapshot.docs.map(d => d.id));
 
-            // 3. Transform Trello data into Milestone objects
             const systemCategory = categories.find(c => c.id === 'cat-sistema') || { id: 'cat-sistema', name: 'Sistema', color: '#000000' };
             const creationDate = getTrelloObjectCreationDate(selectedCard.id);
             const creationMilestone: Milestone = {
@@ -194,30 +192,34 @@ export default function Home() {
 
             const allTrelloMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
             
-            // 4. Filter out milestones that are already in the database
             const newMilestonesToSync = allTrelloMilestones.filter(m => !existingMilestoneIds.has(m.id));
 
-            // 5. Batch write the new milestones to Firestore
             if (newMilestonesToSync.length > 0) {
                 const batch = writeBatch(firestore);
                 newMilestonesToSync.forEach(milestone => {
                     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestone.id);
                     batch.set(milestoneRef, milestone);
                 });
-                await batch.commit();
-                toast({ title: "Sincronización completa", description: `Se guardaron ${newMilestonesToSync.length} nuevos hitos desde Trello.` });
+                batch.commit().then(() => {
+                    toast({ title: "Sincronización completa", description: `Se guardaron ${newMilestonesToSync.length} nuevos hitos desde Trello.` });
+                }).catch((serverError) => {
+                    console.error("Firestore Batch Commit Error:", serverError);
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({
+                        path: `projects/${selectedCard.id}/milestones`,
+                        operation: 'create',
+                        requestResourceData: { info: `Batch write for ${newMilestonesToSync.length} milestones` }
+                    }));
+                });
             }
-
         } catch (error) {
-            console.error("Error during Trello to Firestore sync:", error);
-            toast({ variant: 'destructive', title: 'Error de Sincronización', description: 'No se pudieron sincronizar los datos de Trello con Firestore.' });
-            // Reset ref on error to allow a re-try
+            console.error("Error preparing Trello sync data:", error);
+            toast({ variant: 'destructive', title: 'Error de Sincronización', description: 'No se pudieron obtener los datos de Trello.' });
             syncPerformedForCard.current = null;
         }
     };
 
     syncTrelloToFirestore();
-}, [selectedCard, firestore, categories]);
+  }, [selectedCard, firestore, categories]);
 
 
   React.useEffect(() => {
@@ -306,15 +308,21 @@ export default function Home() {
         history: [`${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`],
     };
 
-    try {
-        const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
-        await addDoc(milestonesRef, newMilestoneData);
-        setIsUploadOpen(false);
+    const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
+    addDoc(milestonesRef, newMilestoneData)
+      .then(() => {
         toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
-    } catch(error) {
-        console.error("Error creating milestone:", error);
-        toast({ variant: "destructive", title: "Error al guardar", description: "No se pudo guardar el hito en la base de datos." });
-    }
+      })
+      .catch((serverError) => {
+        console.error("Error creating milestone:", serverError);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: milestonesRef.path,
+            operation: 'create',
+            requestResourceData: newMilestoneData,
+        }));
+      });
+
+    setIsUploadOpen(false);
   }, [categories, selectedCard, firestore]);
 
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
@@ -325,17 +333,22 @@ export default function Home() {
       return;
     }
 
-    try {
-        const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
-        await setDoc(milestoneRef, updatedMilestone, { merge: true });
-        
-        if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
-            setSelectedMilestone(updatedMilestone);
-        }
-        toast({ title: "Hito actualizado", description: "Los cambios se guardaron correctamente." });
-    } catch (error) {
-        console.error("Error updating milestone:", error);
-        toast({ variant: "destructive", title: "Error al actualizar", description: "No se pudieron guardar los cambios en la base de datos." });
+    const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
+    setDoc(milestoneRef, updatedMilestone, { merge: true })
+      .then(() => {
+          toast({ title: "Hito actualizado", description: "Los cambios se guardaron correctamente." });
+      })
+      .catch((serverError) => {
+          console.error("Error updating milestone:", serverError);
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+              path: milestoneRef.path,
+              operation: 'update',
+              requestResourceData: updatedMilestone
+          }));
+      });
+    
+    if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
+        setSelectedMilestone(updatedMilestone);
     }
   }, [selectedCard, selectedMilestone, firestore]);
 
