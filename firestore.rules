@@ -4,7 +4,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // This rule allows read and write access to all documents in your database.
     // It's useful for prototyping, but make sure to secure it before production.
-    match /projects/{projectId}/{document=**} {
+    match /{document=**} {
       allow read, write: if true;
     }
   }
