@@ -314,6 +314,9 @@ export default function Home() {
     });
 
     try {
+      const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
+      const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
+
       const associatedFiles: AssociatedFile[] = [];
       if (files && files.length > 0) {
         update({ id: toastId, description: `Subiendo ${files.length} archivo(s) a Google Drive...` });
@@ -322,7 +325,7 @@ export default function Home() {
           const arrayBuffer = await file.arrayBuffer();
           const base64Data = Buffer.from(arrayBuffer).toString('base64');
           
-          const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data);
+          const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
           
           associatedFiles.push({
             id: driveId,
@@ -576,6 +579,7 @@ export default function Home() {
                               categories={categories}
                               onMilestoneUpdate={handleMilestoneUpdate}
                               onClose={handleDetailClose}
+                              projectName={selectedCard?.name || ''}
                           />
                       </div>
                    </>

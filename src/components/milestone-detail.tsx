@@ -24,9 +24,10 @@ interface MilestoneDetailProps {
   categories: Category[];
   onMilestoneUpdate: (updatedMilestone: Milestone) => void;
   onClose: () => void;
+  projectName: string;
 }
 
-export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onClose }: MilestoneDetailProps) {
+export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onClose, projectName }: MilestoneDetailProps) {
   const [newTag, setNewTag] = React.useState('');
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [editableTitle, setEditableTitle] = React.useState('');
@@ -136,6 +137,9 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
     });
 
     try {
+      const codeMatch = projectName.match(/\b([A-Z]{3}\d{3})\b/i);
+      const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
+
       const newAssociatedFiles: AssociatedFile[] = [];
       for (const file of filesToUpload) {
         update({ id: toastId, description: `Subiendo "${file.name}" a Google Drive...` });
@@ -143,7 +147,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
         const arrayBuffer = await file.arrayBuffer();
         const base64Data = Buffer.from(arrayBuffer).toString('base64');
 
-        const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data);
+        const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
 
         newAssociatedFiles.push({
           id: driveId,
