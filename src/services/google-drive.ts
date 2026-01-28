@@ -98,12 +98,12 @@ async function findOrCreateFolder(drive: any, name: string, parentId: string): P
  * @returns A promise that resolves with the ID and web view link of the uploaded file.
  */
 export async function uploadFileToDrive(fileName: string, mimeType: string, base64Data: string, projectCode: string | null): Promise<DriveUploadResult> {
-    const drive = getDriveClient();
-    const fileBuffer = Buffer.from(base64Data, 'base64');
-    
-    const ROOT_FOLDER_NAME = "DEA_TL_archivos";
-
     try {
+        const drive = getDriveClient();
+        const fileBuffer = Buffer.from(base64Data, 'base64');
+        
+        const ROOT_FOLDER_NAME = "DEA_TL_archivos";
+
         // 1. Find or create the root folder.
         const rootFolderId = await findOrCreateFolder(drive, ROOT_FOLDER_NAME, 'root');
         
@@ -142,7 +142,9 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
         console.error('Error uploading file to Google Drive:', error);
 
         let reason = 'An unknown error occurred.';
-        if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+        if (error.message && error.message.includes('DECODER routines')) {
+            reason = `Authentication failed while parsing the private key. This almost always means the GOOGLE_PRIVATE_KEY in your .env file is malformed. Please ensure it is on a single line, wrapped in double quotes, and that all newline characters are escaped as \\n. Original error: ${error.message}`;
+        } else if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
             reason = error.errors.map((e: any) => e.message).join('; ');
         } else if (error.message) {
             reason = error.message;
