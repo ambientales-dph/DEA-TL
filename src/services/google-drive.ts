@@ -13,7 +13,7 @@ import { Readable } from 'stream';
  * 
  * Required Environment Variables in your .env file:
  * - GOOGLE_SERVICE_ACCOUNT_EMAIL: The email of the service account.
- * - GOOGLE_PRIVATE_KEY: The private key from the service account's JSON file (must be enclosed in double quotes).
+ * - GOOGLE_PRIVATE_KEY: The private key from the service account's JSON file.
  * - GOOGLE_DRIVE_ROOT_FOLDER_ID: The ID of the shared root folder in your Drive.
  */
 
@@ -28,19 +28,20 @@ export interface DriveUploadResult {
  * @returns An authenticated Google Drive API client instance.
  */
 function getDriveClient() {
+    const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    // The private key can be a single line with `\n` or a multi-line string in quotes.
+    // The replace function handles both cases to ensure it's formatted correctly for the Google API client.
+    const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+
+    if (!serviceAccountEmail || !privateKey) {
+        throw new Error('Las credenciales de la cuenta de servicio de Google no están configuradas. Revisa GOOGLE_SERVICE_ACCOUNT_EMAIL y GOOGLE_PRIVATE_KEY en tu archivo .env.');
+    }
+    
+    if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+        throw new Error('La GOOGLE_PRIVATE_KEY en tu .env parece tener un formato incorrecto. Asegúrate de que sea la clave completa.');
+    }
+
     try {
-        const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-        // Use replaceAll to handle multiline keys from .env
-        const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replaceAll(/\\n/g, '\n');
-
-        if (!serviceAccountEmail || !privateKey) {
-            throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
-        }
-        
-        if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
-            throw new Error('The GOOGLE_PRIVATE_KEY in your .env file appears to be malformed. Please ensure it\'s a multi-line string wrapped in double quotes and starts with "-----BEGIN PRIVATE KEY-----".');
-        }
-
         const auth = new google.auth.GoogleAuth({
             credentials: {
                 client_email: serviceAccountEmail,
@@ -51,12 +52,9 @@ function getDriveClient() {
 
         return google.drive({ version: 'v3', auth });
     } catch (error: any) {
-         console.error('Failed to create Google Auth client:', error);
-         let reason = 'An unexpected error occurred during Google Auth client creation.';
-         if (error.message && error.message.includes('DECODER routines')) {
-             reason = `Authentication failed while parsing the private key. This indicates the GOOGLE_PRIVATE_KEY in your .env file is malformed. Please ensure it's a multi-line string wrapped in double quotes. Original error: ${error.message}`;
-         } else if (error.message) {
-             reason = error.message;
+         let reason = 'Ocurrió un error inesperado al crear el cliente de Google Auth.';
+         if (error.message) {
+            reason = `La autenticación falló al procesar la clave privada. Revisa que GOOGLE_PRIVATE_KEY en tu .env sea correcta. Error original: ${error.message}`;
          }
          throw new Error(reason);
     }
@@ -77,6 +75,7 @@ async function findOrCreateFolder(drive: any, name: string, parentId: string): P
         q: query,
         fields: 'files(id)',
         spaces: 'drive',
+        supportsAllDrives: true,
     });
 
     if (response.data.files && response.data.files.length > 0) {
@@ -90,6 +89,7 @@ async function findOrCreateFolder(drive: any, name: string, parentId: string): P
         const folder = await drive.files.create({
             requestBody: folderMetadata,
             fields: 'id',
+            supportsAllDrives: true,
         });
         return folder.data.id!;
     }
@@ -113,17 +113,14 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
         const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 
         if (!rootFolderId) {
-            throw new Error('El ID de la carpeta raíz de Google Drive (GOOGLE_DRIVE_ROOT_FOLDER_ID) no está configurado en el archivo .env. Por favor, sigue las instrucciones para configurarlo.');
+            throw new Error('El ID de la carpeta raíz de Google Drive (GOOGLE_DRIVE_ROOT_FOLDER_ID) no está configurado en el archivo .env.');
         }
         
         let parentFolderId = rootFolderId;
 
-        // DIAGNOSTIC STEP: Temporarily disable subfolder creation.
-        // All files will be uploaded to the root folder.
-        // If a project code is provided, find or create the project subfolder inside the root folder.
-        // if (projectCode) {
-        //     parentFolderId = await findOrCreateFolder(drive, projectCode, rootFolderId);
-        // }
+        if (projectCode) {
+            parentFolderId = await findOrCreateFolder(drive, projectCode, rootFolderId);
+        }
 
         const fileMetadata = {
             name: fileName,
@@ -139,10 +136,11 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
             requestBody: fileMetadata,
             media: media,
             fields: 'id, webViewLink',
+            supportsAllDrives: true,
         });
 
         if (!file.data.id || !file.data.webViewLink) {
-            throw new Error('File uploaded, but failed to get ID or webViewLink.');
+            throw new Error('Archivo subido, pero falló al obtener el ID o el enlace de visualización.');
         }
 
         return {
@@ -153,28 +151,22 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
         console.error('Error uploading file to Google Drive:', error);
 
         let reason = 'An unknown error occurred.';
-        // Extract the core reason from the Google API error response
         if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
             reason = error.errors.map((e: any) => e.message).join('; ');
         } else if (error.message) {
             reason = error.message;
         }
-
-        // --- SPECIFIC ERROR CHECKS ---
         
-        // 1. Check for "File not found" which means the FOLDER_ID is wrong.
         if (reason.toLowerCase().includes('file not found')) {
-            reason = `The specified root folder ID in your .env file ('${process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID}') was not found by Google Drive. Please verify the ID is correct and that the service account has "Editor" permissions on that folder.`;
+            reason = `El ID de la carpeta raíz especificado en tu archivo .env ('${process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID}') no fue encontrado por Google Drive. Por favor, verifica que el ID sea correcto y que la cuenta de servicio tenga permisos de "Editor" sobre esa carpeta.`;
         } 
-        // 2. Check for authentication errors
         else if (reason.includes('invalid_grant')) {
-            reason = 'Authentication failed. Please check your service account credentials (email and private key) in the .env file. The private key might be malformed or the service account does not exist.';
+            reason = 'La autenticación falló. Por favor, revisa las credenciales de tu cuenta de servicio (email y clave privada) en el archivo .env. La clave podría tener un formato incorrecto o la cuenta de servicio podría no existir.';
         } 
-        // 3. Check for API/Permission errors
-        else if (reason.includes('accessNotConfigured') || reason.includes('disabled in the GCloud project') || (error.code && error.code === 403)) {
-            reason = 'The Google Drive API might not be enabled for this project, or the service account lacks permissions. Please ensure the API is enabled and that the service account email has "Editor" access to the folder specified by GOOGLE_DRIVE_ROOT_FOLDER_ID.';
+        else if (error.code === 403 || (reason.includes('accessNotConfigured') || reason.includes('disabled in the GCloud project'))) {
+            reason = 'La API de Google Drive podría no estar habilitada para este proyecto, o la cuenta de servicio no tiene los permisos necesarios. Por favor, asegúrate de que la API esté habilitada en tu proyecto de Google Cloud y que el email de la cuenta de servicio tenga acceso como "Editor" a la carpeta especificada en GOOGLE_DRIVE_ROOT_FOLDER_ID.';
         }
         
-        throw new Error(`Failed to upload file "${fileName}" to Google Drive. Reason: ${reason}`);
+        throw new Error(`Fallo al subir el archivo "${fileName}" a Google Drive. Razón: ${reason}`);
     }
 }
