@@ -31,10 +31,16 @@ export interface DriveUploadResult {
  */
 function getDriveClient() {
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    // The replace call is crucial for keys stored in .env files.
     const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
     if (!serviceAccountEmail || !privateKey) {
         throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
+    }
+    
+    // Add a sanity check for the private key format.
+    if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+        throw new Error('The GOOGLE_PRIVATE_KEY in your .env file appears to be malformed or is missing. It should start with "-----BEGIN PRIVATE KEY-----". Please ensure it is copied correctly and is on a single line with "\\n" for newlines.');
     }
 
     const auth = new google.auth.GoogleAuth({
