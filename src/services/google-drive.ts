@@ -29,8 +29,8 @@ export interface DriveUploadResult {
  */
 function getDriveClient() {
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    // The private key can be a single line with `\n` or a multi-line string in quotes.
-    const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '');
+    // The private key must be a multi-line string in quotes in the .env file.
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
 
     if (!serviceAccountEmail || !privateKey) {
         throw new Error('Las credenciales de la cuenta de servicio de Google no están configuradas. Revisa GOOGLE_SERVICE_ACCOUNT_EMAIL y GOOGLE_PRIVATE_KEY en tu archivo .env.');
@@ -97,15 +97,14 @@ async function findOrCreateFolder(drive: any, name: string, parentId: string): P
         // but can't immediately write to it.
         const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
         if (serviceAccountEmail && newFolderId) {
-            const permission = {
-                type: 'user',
-                role: 'writer',
-                emailAddress: serviceAccountEmail,
-            };
             try {
                 await drive.permissions.create({
                     fileId: newFolderId,
-                    requestBody: permission,
+                    requestBody: {
+                        type: 'user',
+                        role: 'writer',
+                        emailAddress: serviceAccountEmail,
+                    },
                     supportsAllDrives: true,
                 });
             } catch (permError) {
@@ -120,7 +119,8 @@ async function findOrCreateFolder(drive: any, name: string, parentId: string): P
 
 
 /**
- * Uploads a file to a specified folder in Google Drive, organizing by project code.
+ * Uploads a file to a specified folder in Google Drive using a "create-then-move" strategy
+ * to bypass permission race conditions.
  * 
  * @param fileName The name of the file to be uploaded.
  * @param mimeType The MIME type of the file.
@@ -151,30 +151,41 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
             parentFolderId = await findOrCreateFolder(drive, projectCode, rootFolderId);
         }
 
+        // Step 1: Create the file without a parent. This creates it in the service account's own space.
         const fileMetadata = {
             name: fileName,
-            parents: [parentFolderId],
         };
-
         const media = {
             mimeType: mimeType,
             body: Readable.from(fileBuffer),
         };
-
         const file = await drive.files.create({
             requestBody: fileMetadata,
             media: media,
+            fields: 'id',
+            supportsAllDrives: true,
+        });
+        
+        const fileId = file.data.id;
+        if (!fileId) {
+            throw new Error('Fallo al crear el archivo inicial; no se obtuvo un ID de Drive.');
+        }
+
+        // Step 2: Move the file to the correct destination folder and retrieve its web link.
+        const updatedFile = await drive.files.update({
+            fileId: fileId,
+            addParents: parentFolderId,
             fields: 'id, webViewLink',
             supportsAllDrives: true,
         });
 
-        if (!file.data.id || !file.data.webViewLink) {
-            throw new Error('Archivo subido, pero falló al obtener el ID o el enlace de visualización.');
+        if (!updatedFile.data.id || !updatedFile.data.webViewLink) {
+            throw new Error('Archivo movido, pero falló al obtener el ID final o el enlace de visualización.');
         }
 
         return {
-            id: file.data.id,
-            webViewLink: file.data.webViewLink,
+            id: updatedFile.data.id,
+            webViewLink: updatedFile.data.webViewLink,
         };
     } catch (error: any) {
         console.error('Error uploading file to Google Drive:', error);
@@ -187,7 +198,7 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
         }
         
         if (reason.toLowerCase().includes('file not found')) {
-            reason = `El ID de la carpeta raíz especificado en tu archivo .env ('${process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID}') no fue encontrado. Por favor, verifica que el ID sea correcto y que la cuenta de servicio tenga permisos de "Editor" sobre esa carpeta.`;
+            reason = `El ID de la carpeta raíz especificado en tu archivo .env ('${process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID}') no fue encontrado o la cuenta de servicio no tiene acceso. Por favor, verifica que el ID sea correcto y que la cuenta de servicio tenga permisos de "Editor" sobre esa carpeta.`;
         } 
         else if (reason.includes('invalid_grant')) {
             reason = 'La autenticación falló. Por favor, revisa las credenciales de tu cuenta de servicio (email y clave privada) en el archivo .env.';
