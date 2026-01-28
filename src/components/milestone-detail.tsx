@@ -7,7 +7,7 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock } from 'lucide-react';
+import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -15,6 +15,9 @@ import { Button } from './ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { uploadFileToDrive } from '@/services/google-drive';
+import { Buffer } from 'buffer';
 
 interface MilestoneDetailProps {
   milestone: Milestone;
@@ -30,6 +33,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
   const [isEditingDescription, setIsEditingDescription] = React.useState(false);
   const [editableDescription, setEditableDescription] = React.useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   React.useEffect(() => {
     if (milestone) {
@@ -120,35 +124,60 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
     }
   };
 
-  const handleFileAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !milestone) return;
+  const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !milestone) return;
 
-    const newFiles = Array.from(e.target.files);
-    
-    const newAssociatedFiles: AssociatedFile[] = newFiles.map(file => {
-      const fileType: AssociatedFile['type'] = 
-          file.type.startsWith('image/') ? 'image' : 
-          file.type.startsWith('video/') ? 'video' :
-          file.type.startsWith('audio/') ? 'audio' :
-          ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other';
-      
-      return {
-          id: `file-local-${Date.now()}-${file.name}`,
-          name: file.name,
-          size: `${(file.size / 1024).toFixed(2)} KB`,
-          type: fileType
-      };
+    const filesToUpload = Array.from(e.target.files);
+    if (e.target) e.target.value = '';
+
+    const { id: toastId, update, dismiss } = toast({
+      title: "Subiendo archivos...",
+      description: `Procesando ${filesToUpload.length} archivo(s). Por favor, espera.`,
     });
 
-    if (newAssociatedFiles.length > 0) {
-      onMilestoneUpdate({
-        ...milestone,
-        associatedFiles: [...milestone.associatedFiles, ...newAssociatedFiles],
-        history: [...milestone.history, createLogEntry(`Se añadieron ${newAssociatedFiles.length} archivo(s)`)],
+    try {
+      const newAssociatedFiles: AssociatedFile[] = [];
+      for (const file of filesToUpload) {
+        update({ id: toastId, description: `Subiendo "${file.name}" a Google Drive...` });
+
+        const arrayBuffer = await file.arrayBuffer();
+        const base64Data = Buffer.from(arrayBuffer).toString('base64');
+
+        const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data);
+
+        newAssociatedFiles.push({
+          id: driveId,
+          name: file.name,
+          size: `${(file.size / 1024).toFixed(2)} KB`,
+          type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
+          url: webViewLink,
+          driveId: driveId
+        });
+      }
+
+      if (newAssociatedFiles.length > 0) {
+        onMilestoneUpdate({
+          ...milestone,
+          associatedFiles: [...milestone.associatedFiles, ...newAssociatedFiles],
+          history: [...milestone.history, createLogEntry(`Se añadieron ${newAssociatedFiles.length} archivo(s)`)],
+        });
+      }
+
+      dismiss(toastId);
+      toast({
+        title: "Archivos subidos con éxito",
+        description: `${newAssociatedFiles.length} archivo(s) han sido añadidos al hito.`
+      });
+    } catch (error: any) {
+      console.error("Error uploading files to existing milestone:", error);
+      dismiss(toastId);
+      toast({
+        variant: "destructive",
+        title: "Error al subir archivos",
+        description: error.message || "No se pudo completar la operación de subida.",
+        duration: 10000,
       });
     }
-    // Reset file input
-    if(e.target) e.target.value = '';
   };
 
   return (
@@ -301,15 +330,34 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                     </h3>
                     {milestone.associatedFiles.length > 0 ? (
                         <ul className="space-y-1.5 border border-zinc-400 rounded-md p-2 bg-zinc-200">
-                            {milestone.associatedFiles.map(file => (
-                                <li key={file.id} className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <div className="shrink-0">
-                                            <FileIcon type={file.type} />
+                           {milestone.associatedFiles.map(file => (
+                                <li key={file.id}>
+                                    {file.url ? (
+                                        <a 
+                                            href={file.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="flex items-center justify-between p-1.5 bg-zinc-100 rounded-md hover:bg-zinc-50 transition-colors group/link"
+                                            title={`Abrir "${file.name}" en una nueva pestaña`}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <FileIcon type={file.type} />
+                                                <span className="text-xs font-medium truncate text-black">{file.name}</span>
+                                            </div>
+                                            <div className="flex items-center shrink-0 ml-2">
+                                                <span className="text-xs text-zinc-700 mr-2">{file.size}</span>
+                                                <ExternalLink className="h-3 w-3 text-zinc-500 group-hover/link:text-primary transition-colors" />
+                                            </div>
+                                        </a>
+                                    ) : (
+                                        <div className="flex items-center justify-between p-1.5 bg-zinc-100 rounded-md">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <FileIcon type={file.type} />
+                                                <span className="text-xs font-medium truncate text-black">{file.name}</span>
+                                            </div>
+                                            <span className="text-xs text-zinc-700 shrink-0 ml-2">{file.size}</span>
                                         </div>
-                                        <span className="text-xs font-medium truncate text-black" title={file.name}>{file.name}</span>
-                                    </div>
-                                    <span className="text-xs text-zinc-700 shrink-0">{file.size}</span>
+                                    )}
                                 </li>
                             ))}
                         </ul>
