@@ -7,7 +7,7 @@ import { Timeline } from '@/components/timeline';
 import { MilestoneDetail } from '@/components/milestone-detail';
 import { type Milestone, type Category, type AssociatedFile } from '@/types';
 import { CATEGORIES } from '@/lib/data';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,8 @@ import { useFirestore, useCollection } from '@/firebase';
 import { collection, doc, setDoc, addDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { uploadFileToDrive } from '@/services/google-drive';
+import { Buffer } from 'buffer';
 
 const DEFAULT_CATEGORY_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
 
@@ -50,6 +52,7 @@ export default function Home() {
   
   const firestore = useFirestore();
   const syncPerformedForCard = React.useRef<string | null>(null);
+  const { toast } = useToast();
 
   // Memoize the Firestore query to prevent re-renders
   const milestonesCollection = React.useMemo(() => {
@@ -189,7 +192,7 @@ export default function Home() {
             const defaultCategory = categories.find(c => c.name.toLowerCase().includes('trello')) || CATEGORIES[1];
             const attachmentMilestones: Milestone[] = attachments.map(att => {
               const fileType: AssociatedFile['type'] = att.mimeType.startsWith('image/') ? 'image' : att.mimeType.startsWith('video/') ? 'video' : att.mimeType.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => att.mimeType.includes(t)) ? 'document' : 'other';
-              const associatedFile: AssociatedFile = { id: `file-${att.id}`, name: att.fileName, size: `${(att.bytes / 1024).toFixed(2)} KB`, type: fileType };
+              const associatedFile: AssociatedFile = { id: `file-${att.id}`, name: att.fileName, size: `${(att.bytes / 1024).toFixed(2)} KB`, type: fileType, url: att.url };
               return {
                   id: `hito-${att.id}`,
                   name: att.fileName,
@@ -223,32 +226,18 @@ export default function Home() {
                     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestone.id);
                     batch.set(milestoneRef, milestone);
                 });
-                batch.commit().then(() => {
-                    toast({ title: "Sincronización completa", description: `Se guardaron ${newMilestonesToSync.length} nuevos hitos desde Trello.` });
-                }).catch((serverError) => {
-                    console.error("Firestore Batch Commit Error:", serverError);
-                    toast({
-                        variant: "destructive",
-                        title: "Error al sincronizar con Trello",
-                        description: serverError.message || "No se pudieron guardar los datos de Trello en la base de datos.",
-                        duration: 10000,
-                    });
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({
-                        path: `projects/${selectedCard.id}/milestones`,
-                        operation: 'create',
-                        requestResourceData: { info: `Batch write for ${newMilestonesToSync.length} milestones` }
-                    }));
-                });
+                await batch.commit()
+                toast({ title: "Sincronización completa", description: `Se guardaron ${newMilestonesToSync.length} nuevos hitos desde Trello.` });
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error preparing Trello sync data:", error);
-            toast({ variant: 'destructive', title: 'Error de Sincronización', description: 'No se pudieron obtener los datos de Trello.' });
+            toast({ variant: 'destructive', title: 'Error de Sincronización', description: `No se pudieron obtener los datos de Trello: ${error.message}` });
             syncPerformedForCard.current = null;
         }
     };
 
     syncTrelloToFirestore();
-  }, [selectedCard, firestore, categories]);
+  }, [selectedCard, firestore, categories, toast]);
 
 
   React.useEffect(() => {
@@ -275,7 +264,7 @@ export default function Home() {
         loadCardFromUrl();
       }
     }
-  }, [isLoaded, hasLoadedFromUrl, handleCardSelect]);
+  }, [isLoaded, hasLoadedFromUrl, handleCardSelect, toast]);
 
   const displayedMilestones = React.useMemo(() => {
     if (selectedCard) {
@@ -319,46 +308,63 @@ export default function Home() {
         return;
     };
 
-    const associatedFiles: AssociatedFile[] = (files || []).map(file => ({
-      id: `file-local-${Date.now()}-${file.name}`,
-      name: file.name,
-      size: `${(file.size / 1024).toFixed(2)} KB`,
-      type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
-    }));
-    
-    const newMilestoneData = {
-        name: name,
-        description: description,
-        occurredAt: occurredAt.toISOString(),
-        category: category,
-        tags: ['manual'],
-        associatedFiles: associatedFiles,
-        isImportant: false,
-        history: [`${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`],
-    };
+    const { id: toastId, update, dismiss } = toast({
+      title: "Creando hito...",
+      description: "Por favor, espera.",
+    });
 
-    const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
-    addDoc(milestonesRef, newMilestoneData)
-      .then(() => {
-        toast({ title: "Hito creado", description: "El nuevo hito ha sido guardado en la base de datos." });
-      })
-      .catch((serverError) => {
-        console.error("Error creating milestone:", serverError);
+    try {
+      const associatedFiles: AssociatedFile[] = [];
+      if (files && files.length > 0) {
+        update({ id: toastId, description: `Subiendo ${files.length} archivo(s) a Google Drive...` });
+        
+        for (const file of files) {
+          const arrayBuffer = await file.arrayBuffer();
+          const base64Data = Buffer.from(arrayBuffer).toString('base64');
+          
+          const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data);
+          
+          associatedFiles.push({
+            id: driveId,
+            name: file.name,
+            size: `${(file.size / 1024).toFixed(2)} KB`,
+            type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
+            url: webViewLink,
+            driveId: driveId
+          });
+        }
+      }
+      
+      const newMilestoneData = {
+          name: name,
+          description: description,
+          occurredAt: occurredAt.toISOString(),
+          category: category,
+          tags: ['manual'],
+          associatedFiles: associatedFiles,
+          isImportant: false,
+          history: [`${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`],
+      };
+
+      const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
+      await addDoc(milestonesRef, newMilestoneData);
+      
+      dismiss(toastId);
+      toast({ title: "Hito creado con éxito", description: "El nuevo hito y sus archivos se han guardado." });
+      
+    } catch (error: any) {
+        console.error("Error during upload process:", error);
+        dismiss(toastId);
         toast({
             variant: "destructive",
-            title: "Error al guardar hito",
-            description: serverError.message || "No se pudo comunicar con la base de datos.",
+            title: "Error al crear el hito",
+            description: error.message || "No se pudo completar la operación.",
             duration: 10000,
         });
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: milestonesRef.path,
-            operation: 'create',
-            requestResourceData: newMilestoneData,
-        }));
-      });
+    }
 
     setIsUploadOpen(false);
-  }, [categories, selectedCard, firestore]);
+  }, [categories, selectedCard, firestore, toast]);
 
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
     if (!firestore || !selectedCard) return;
@@ -369,29 +375,29 @@ export default function Home() {
     }
 
     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
-    setDoc(milestoneRef, updatedMilestone, { merge: true })
-      .then(() => {
-          toast({ title: "Hito actualizado", description: "Los cambios se guardaron correctamente." });
-      })
-      .catch((serverError) => {
-          console.error("Error updating milestone:", serverError);
-          toast({
-              variant: "destructive",
-              title: "Error al actualizar hito",
-              description: serverError.message || "No se pudo comunicar con la base de datos.",
-              duration: 10000,
-          });
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-              path: milestoneRef.path,
-              operation: 'update',
-              requestResourceData: updatedMilestone
-          }));
-      });
+    
+    try {
+      await setDoc(milestoneRef, updatedMilestone, { merge: true });
+      toast({ title: "Hito actualizado", description: "Los cambios se guardaron correctamente." });
+    } catch (serverError: any) {
+        console.error("Error updating milestone:", serverError);
+        toast({
+            variant: "destructive",
+            title: "Error al actualizar hito",
+            description: serverError.message || "No se pudo comunicar con la base de datos.",
+            duration: 10000,
+        });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: milestoneRef.path,
+            operation: 'update',
+            requestResourceData: updatedMilestone
+        }));
+    }
     
     if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
         setSelectedMilestone(updatedMilestone);
     }
-  }, [selectedCard, selectedMilestone, firestore]);
+  }, [selectedCard, selectedMilestone, firestore, toast]);
 
 
   const handleSetRange = React.useCallback((rangeType: '1D' | '1M' | '1Y' | 'All') => {
@@ -454,7 +460,7 @@ export default function Home() {
       return;
     }
     setCategories(prev => prev.filter(c => c.id !== categoryId));
-  }, [displayedMilestones]);
+  }, [displayedMilestones, toast]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();

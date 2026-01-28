@@ -3,6 +3,8 @@ export interface AssociatedFile {
   name: string;
   size: string;
   type: 'document' | 'image' | 'video' | 'audio' | 'other';
+  url?: string;
+  driveId?: string;
 }
 
 export interface Milestone {
