@@ -34,7 +34,7 @@ function getDriveClient() {
     const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
     if (!serviceAccountEmail || !privateKey) {
-        throw new Error('Google Drive service account credentials are not configured in environment variables.');
+        throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
     }
 
     const auth = new google.auth.GoogleAuth({
@@ -132,8 +132,22 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
             id: file.data.id,
             webViewLink: file.data.webViewLink,
         };
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error uploading file to Google Drive:', error);
-        throw new Error(`Failed to upload file "${fileName}" to Google Drive.`);
+
+        let reason = 'An unknown error occurred.';
+        if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+            reason = error.errors.map((e: any) => e.message).join('; ');
+        } else if (error.message) {
+            reason = error.message;
+        }
+
+        if (reason.includes('invalid_grant')) {
+            reason = 'Authentication failed. Please check your service account credentials (email and private key) in the .env file. The private key might be malformed or the service account does not exist.';
+        } else if (reason.includes('accessNotConfigured') || reason.includes('disabled in the GCloud project') || (error.code && error.code === 403)) {
+            reason = 'The Google Drive API might not be enabled for this project, or the service account lacks permissions. Please check the Google Cloud Console.';
+        }
+        
+        throw new Error(`Failed to upload file "${fileName}" to Google Drive. Reason: ${reason}`);
     }
 }
