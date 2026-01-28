@@ -49,7 +49,10 @@ export default function Home() {
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
   const [hasLoadedFromUrl, setHasLoadedFromUrl] = React.useState(false);
   const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
-  
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [uploadText, setUploadText] = React.useState('');
+
   const firestore = useFirestore();
   const syncPerformedForCard = React.useRef<string | null>(null);
   const { toast } = useToast();
@@ -301,16 +304,22 @@ export default function Home() {
         return;
     }
 
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadText('Iniciando...');
+
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find(c => c.id === categoryId);
     if (!category) {
         toast({ variant: "destructive", title: "Error al crear hito", description: "La categoría seleccionada no es válida." });
+        setIsUploading(false);
         return;
     };
 
     const { id: toastId, update, dismiss } = toast({
-      title: "Creando hito...",
+      title: "Iniciando proceso...",
       description: "Por favor, espera.",
+      duration: Infinity,
     });
 
     try {
@@ -319,9 +328,12 @@ export default function Home() {
 
       const associatedFiles: AssociatedFile[] = [];
       if (files && files.length > 0) {
-        update({ id: toastId, description: `Subiendo ${files.length} archivo(s) a Google Drive...` });
-        
-        for (const file of files) {
+        const totalFiles = files.length;
+        for (const [index, file] of files.entries()) {
+          const progressText = `(${index + 1}/${totalFiles}) ${file.name}`;
+          setUploadText(progressText);
+          update({ id: toastId, title: `Subiendo ${totalFiles} archivo(s)...`, description: progressText });
+          
           const arrayBuffer = await file.arrayBuffer();
           const base64Data = Buffer.from(arrayBuffer).toString('base64');
           
@@ -335,9 +347,15 @@ export default function Home() {
             url: webViewLink,
             driveId: driveId
           });
+
+          setUploadProgress(((index + 1) / totalFiles) * 100);
         }
       }
       
+      const savingText = "Guardando información...";
+      setUploadText(savingText);
+      update({ id: toastId, title: savingText, description: "Creando el hito en la base de datos." });
+
       const newMilestoneData = {
           name: name,
           description: description,
@@ -352,6 +370,7 @@ export default function Home() {
       const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
       await addDoc(milestonesRef, newMilestoneData);
       
+      setIsUploadOpen(false);
       dismiss(toastId);
       toast({ title: "Hito creado con éxito", description: "El nuevo hito y sus archivos se han guardado." });
       
@@ -364,9 +383,11 @@ export default function Home() {
             description: error.message || "No se pudo completar la operación.",
             duration: 10000,
         });
+    } finally {
+        setIsUploading(false);
+        setUploadProgress(0);
+        setUploadText('');
     }
-
-    setIsUploadOpen(false);
   }, [categories, selectedCard, firestore, toast]);
 
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
@@ -599,6 +620,9 @@ export default function Home() {
         onOpenChange={setIsUploadOpen}
         categories={categories}
         onUpload={handleUpload}
+        isUploading={isUploading}
+        uploadProgress={uploadProgress}
+        uploadText={uploadText}
       />
       
       <TrelloSummary 
