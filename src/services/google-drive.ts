@@ -32,7 +32,7 @@ export interface DriveUploadResult {
 function getDriveClient() {
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     // The replace call is crucial for keys stored in .env files.
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replaceAll('\\n', '\n');
 
     if (!serviceAccountEmail || !privateKey) {
         throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
