@@ -9,11 +9,11 @@ import { Readable } from 'stream';
  * To use these functions, you must:
  * 1. Create a root folder in your personal Google Drive (e.g., "DEA_TL_archivos").
  * 2. Share this folder with the service account's email, giving it "Editor" permissions.
- * 3. Get the folder's ID from the URL and add it to your .env file.
+ * 3. Get the folder's ID from the URL and add it to your .env file as GOOGLE_DRIVE_ROOT_FOLDER_ID.
  * 
  * Required Environment Variables in your .env file:
  * - GOOGLE_SERVICE_ACCOUNT_EMAIL: The email of the service account.
- * - GOOGLE_PRIVATE_KEY: The private key from the service account's JSON file.
+ * - GOOGLE_PRIVATE_KEY: The private key from the service account's JSON file (as a multi-line string in quotes).
  * - GOOGLE_DRIVE_ROOT_FOLDER_ID: The ID of the shared root folder in your Drive.
  */
 
@@ -28,18 +28,18 @@ export interface DriveUploadResult {
  * @returns An authenticated Google Drive API client instance.
  */
 function getDriveClient() {
-    const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY;
-
-    if (!serviceAccountEmail || !privateKey) {
-        throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
-    }
-    
-    if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
-        throw new Error('The GOOGLE_PRIVATE_KEY in your .env file appears to be malformed or is missing. It should start with "-----BEGIN PRIVATE KEY-----".');
-    }
-
     try {
+        const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+        const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+
+        if (!serviceAccountEmail || !privateKey) {
+            throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
+        }
+        
+        if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
+            throw new Error('The GOOGLE_PRIVATE_KEY in your .env file appears to be malformed or is missing. It should be a multi-line string wrapped in double quotes, starting with "-----BEGIN PRIVATE KEY-----".');
+        }
+
         const auth = new google.auth.GoogleAuth({
             credentials: {
                 client_email: serviceAccountEmail,
@@ -53,7 +53,7 @@ function getDriveClient() {
          console.error('Failed to create Google Auth client:', error);
          let reason = 'An unexpected error occurred during Google Auth client creation.';
          if (error.message && error.message.includes('DECODER routines')) {
-             reason = `Authentication failed while parsing the private key. This indicates the GOOGLE_PRIVATE_KEY in your .env file is malformed. Please ensure it's wrapped in double quotes and contains real newlines. Original error: ${error.message}`;
+             reason = `Authentication failed while parsing the private key. This indicates the GOOGLE_PRIVATE_KEY in your .env file is malformed. Please ensure it's a multi-line string wrapped in double quotes. Original error: ${error.message}`;
          } else if (error.message) {
              reason = error.message;
          }
@@ -151,7 +151,7 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
 
         let reason = 'An unknown error occurred.';
         if (error.message && error.message.includes('DECODER routines')) {
-            reason = `Authentication failed while parsing the private key. This almost always means the GOOGLE_PRIVATE_KEY in your .env file is malformed. Please ensure it is wrapped in double quotes and contains real newlines. Original error: ${error.message}`;
+            reason = `Authentication failed while parsing the private key. This almost always means the GOOGLE_PRIVATE_KEY in your .env file is malformed. Please ensure it's a multi-line string wrapped in double quotes. Original error: ${error.message}`;
         } else if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
             reason = error.errors.map((e: any) => e.message).join('; ');
         } else if (error.message) {
@@ -161,7 +161,7 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
         if (reason.includes('invalid_grant')) {
             reason = 'Authentication failed. Please check your service account credentials (email and private key) in the .env file. The private key might be malformed or the service account does not exist.';
         } else if (reason.includes('accessNotConfigured') || reason.includes('disabled in the GCloud project') || (error.code && error.code === 403)) {
-            reason = 'The Google Drive API might not be enabled for this project, or the service account lacks permissions. Please check the Google Cloud Console.';
+            reason = 'The Google Drive API might not be enabled for this project, or the service account lacks permissions to access the specified root folder. Please ensure the service account email has "Editor" access to the folder specified by GOOGLE_DRIVE_ROOT_FOLDER_ID.';
         }
         
         throw new Error(`Failed to upload file "${fileName}" to Google Drive. Reason: ${reason}`);
