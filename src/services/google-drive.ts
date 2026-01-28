@@ -30,14 +30,15 @@ export interface DriveUploadResult {
 function getDriveClient() {
     try {
         const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-        const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+        // Use replaceAll to handle multiline keys from .env
+        const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replaceAll(/\\n/g, '\n');
 
         if (!serviceAccountEmail || !privateKey) {
             throw new Error('Google Drive service account credentials are not configured in environment variables. Please check your .env file for GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.');
         }
         
         if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
-            throw new Error('The GOOGLE_PRIVATE_KEY in your .env file appears to be malformed. It should be enclosed in double quotes, and start with "-----BEGIN PRIVATE KEY-----".');
+            throw new Error('The GOOGLE_PRIVATE_KEY in your .env file appears to be malformed. Please ensure it\'s a multi-line string wrapped in double quotes and starts with "-----BEGIN PRIVATE KEY-----".');
         }
 
         const auth = new google.auth.GoogleAuth({
@@ -117,10 +118,12 @@ export async function uploadFileToDrive(fileName: string, mimeType: string, base
         
         let parentFolderId = rootFolderId;
 
+        // DIAGNOSTIC STEP: Temporarily disable subfolder creation.
+        // All files will be uploaded to the root folder.
         // If a project code is provided, find or create the project subfolder inside the root folder.
-        if (projectCode) {
-            parentFolderId = await findOrCreateFolder(drive, projectCode, rootFolderId);
-        }
+        // if (projectCode) {
+        //     parentFolderId = await findOrCreateFolder(drive, projectCode, rootFolderId);
+        // }
 
         const fileMetadata = {
             name: fileName,
