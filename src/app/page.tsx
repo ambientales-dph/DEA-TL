@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -8,7 +9,7 @@ import { MilestoneDetail } from '@/components/milestone-detail';
 import { type Milestone, type Category, type AssociatedFile } from '@/types';
 import { CATEGORIES } from '@/lib/data';
 import { useToast } from '@/hooks/use-toast';
-import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format } from 'date-fns';
+import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -349,10 +350,19 @@ export default function Home() {
       setUploadText(savingText);
       update({ id: toastId, title: savingText, description: "Creando el hito en la base de datos." });
 
+      // Apply automatic time logic
+      const now = new Date();
+      const finalDate = new Date(occurredAt);
+      if (isSameDay(finalDate, now)) {
+        finalDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      } else {
+        finalDate.setHours(7, 0, 0, 0);
+      }
+
       const newMilestoneData = {
           name: name,
           description: description,
-          occurredAt: occurredAt.toISOString(),
+          occurredAt: finalDate.toISOString(),
           category: category,
           tags: ['manual'],
           associatedFiles: associatedFiles,

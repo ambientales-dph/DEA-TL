@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -9,7 +10,7 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock, ExternalLink, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Button } from './ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
@@ -94,12 +95,24 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
   };
 
   const handleDateChange = (newDate: Date | undefined) => {
-    if (newDate && milestone && newDate.toISOString() !== milestone.occurredAt) {
-      onMilestoneUpdate({
-        ...milestone,
-        occurredAt: newDate.toISOString(),
-        history: [...milestone.history, createLogEntry(`Fecha cambiada a ${format(newDate, 'PPP', { locale: es })}`)],
-      });
+    if (newDate && milestone) {
+      const now = new Date();
+      let finalDate = new Date(newDate);
+
+      // Apply automatic time logic
+      if (isSameDay(finalDate, now)) {
+        finalDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      } else {
+        finalDate.setHours(7, 0, 0, 0);
+      }
+
+      if (finalDate.toISOString() !== milestone.occurredAt) {
+        onMilestoneUpdate({
+          ...milestone,
+          occurredAt: finalDate.toISOString(),
+          history: [...milestone.history, createLogEntry(`Fecha cambiada a ${format(finalDate, 'PPP', { locale: es })}`)],
+        });
+      }
     }
   };
 
