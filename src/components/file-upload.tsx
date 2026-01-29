@@ -183,6 +183,9 @@ export function FileUpload({
                               date > new Date() || date < new Date("1900-01-01")
                             }
                             initialFocus
+                            captionLayout="dropdown"
+                            fromYear={1900}
+                            toYear={new Date().getFullYear()}
                           />
                         </PopoverContent>
                       </Popover>

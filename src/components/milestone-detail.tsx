@@ -18,6 +18,8 @@ import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { uploadFileToDrive } from '@/services/google-drive';
 import { Buffer } from 'buffer';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Calendar } from './ui/calendar';
 
 interface MilestoneDetailProps {
   milestone: Milestone;
@@ -80,6 +82,16 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
         ...milestone,
         category: newCategory,
         history: [...milestone.history, createLogEntry(`Categoría cambiada a "${newCategory.name}"`)],
+      });
+    }
+  };
+
+  const handleDateChange = (newDate: Date | undefined) => {
+    if (newDate && milestone && newDate.toISOString() !== milestone.occurredAt) {
+      onMilestoneUpdate({
+        ...milestone,
+        occurredAt: newDate.toISOString(),
+        history: [...milestone.history, createLogEntry(`Fecha cambiada a ${format(newDate, 'PPP', { locale: es })}`)],
       });
     }
   };
@@ -204,7 +216,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                 <h2 className="font-headline text-lg font-medium flex items-center gap-2 truncate">
                     <span className="truncate" title={milestone.name}>{milestone.name}</span>
                     <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsEditingTitle(true)}>
-                        <Pencil className="h-3 w-3" />
+                        <Pencil className="h-3.5 w-3.5" />
                     </Button>
                 </h2>
                 )}
@@ -238,7 +250,26 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                 </div>
                  <div className="flex items-center text-xs text-zinc-700 mt-1.5">
                     <Clock className="h-3 w-3 mr-1.5" />
-                    <span>{format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}</span>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <button className="hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2">
+                                {format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}
+                            </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                                mode="single"
+                                selected={parseISO(milestone.occurredAt)}
+                                onSelect={handleDateChange}
+                                disabled={(date) =>
+                                    date > new Date() || date < new Date("1900-01-01")
+                                }
+                                captionLayout="dropdown"
+                                fromYear={1900}
+                                toYear={new Date().getFullYear()}
+                            />
+                        </PopoverContent>
+                    </Popover>
                 </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
