@@ -1,5 +1,5 @@
 import { Input } from './ui/input';
-import { Search, List, ExternalLink, Home, GanttChartSquare, Bot } from 'lucide-react';
+import { Search, List, ExternalLink, Home, GanttChartSquare, Bot, GraduationCap } from 'lucide-react';
 import { Button } from './ui/button';
 import {
     Tooltip,
@@ -18,9 +18,21 @@ interface HeaderProps {
   trelloCardUrl: string | null;
   isProjectLoaded: boolean;
   onToggleTrelloSummary: () => void;
+  onSelectTrainingProject: () => void;
 }
 
-export function Header({ searchTerm, setSearchTerm, onSetRange, onToggleView, view, onGoHome, trelloCardUrl, isProjectLoaded, onToggleTrelloSummary }: HeaderProps) {
+export function Header({ 
+  searchTerm, 
+  setSearchTerm, 
+  onSetRange, 
+  onToggleView, 
+  view, 
+  onGoHome, 
+  trelloCardUrl, 
+  isProjectLoaded, 
+  onToggleTrelloSummary,
+  onSelectTrainingProject
+}: HeaderProps) {
   
   return (
     <header className="flex h-16 items-center border-b bg-card px-4 md:px-6 w-full shrink-0 gap-4 no-print">
@@ -89,11 +101,33 @@ export function Header({ searchTerm, setSearchTerm, onSetRange, onToggleView, vi
                     </TooltipContent>
                 </Tooltip>
             </TooltipProvider>
+          <Separator orientation="vertical" className="h-8 mx-1" />
           <Button size="sm" variant="outline" onClick={() => onSetRange('1D')} disabled={!isProjectLoaded}>Hoy</Button>
           <Button size="sm" variant="outline" onClick={() => onSetRange('1M')} disabled={!isProjectLoaded}>1M</Button>
           <Button size="sm" variant="outline" onClick={() => onSetRange('1Y')} disabled={!isProjectLoaded}>1A</Button>
           <Button size="sm" variant="outline" onClick={() => onSetRange('All')} disabled={!isProjectLoaded}>Todo</Button>
+          
+          <TooltipProvider>
+              <Tooltip>
+                  <TooltipTrigger asChild>
+                      <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 ml-2"
+                        onClick={onSelectTrainingProject}
+                      >
+                          <GraduationCap className="h-4 w-4" />
+                          <span className="hidden lg:inline ml-2">Entrenamiento</span>
+                      </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                      <p>Proyecto de Entrenamiento (RSA999)</p>
+                  </TooltipContent>
+              </Tooltip>
+          </TooltipProvider>
       </div>
     </header>
   );
 }
+
+import { Separator } from './ui/separator';

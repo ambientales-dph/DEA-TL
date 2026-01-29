@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Logo } from './logo';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
-import { Plus, Search, UploadCloud, Loader2, X, Pencil, Trash2, Info, GraduationCap } from 'lucide-react';
+import { Plus, Search, Loader2, X, Pencil, Trash2, Info } from 'lucide-react';
 import type { Category } from '@/types';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { ColorPicker } from './color-picker';
@@ -40,7 +40,6 @@ interface SidebarProps {
   onCategoryDelete: (categoryId: string) => void;
   onCardSelect: (card: TrelloCardBasic | null) => void;
   selectedCard: TrelloCardBasic | null;
-  onNewMilestoneClick: () => void;
   onGoHome: () => void;
   cardFromUrl?: TrelloCardBasic | null;
 }
@@ -61,7 +60,6 @@ export function Sidebar({
     onCategoryDelete,
     onCardSelect, 
     selectedCard, 
-    onNewMilestoneClick,
     onGoHome,
     cardFromUrl,
 }: SidebarProps) {
@@ -236,15 +234,6 @@ export function Sidebar({
     onCardSelect(card);
   }
 
-  const handleTrainingProjectClick = () => {
-    onCardSelect({
-        id: 'training-rsa999',
-        name: 'Proyecto de Entrenamiento Maestro - RSA999',
-        url: '',
-        desc: 'Proyecto de ejemplo maestro con hitos de referencia para capacitación.'
-    });
-  }
-
   const handleGlobalSearch = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter' || !cardSearchTerm.trim() || isSearching) {
         return;
@@ -301,27 +290,6 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
         <Logo />
       </div>
       <div className="flex-1 p-3 flex flex-col gap-4 min-h-0">
-        
-        <Button onClick={onNewMilestoneClick} disabled={!selectedCard || selectedCard.id === 'training-rsa999'} size="sm" className="h-8">
-          <UploadCloud className="mr-2 h-4 w-4" />
-          Hito nuevo
-        </Button>
-
-        {/* Training Section */}
-        <div className="space-y-1">
-             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-1">
-                Entrenamiento
-            </p>
-            <Button 
-                variant={selectedCard?.id === 'training-rsa999' ? "secondary" : "ghost"} 
-                size="sm" 
-                className="w-full justify-start h-8 text-xs font-medium"
-                onClick={handleTrainingProjectClick}
-            >
-                <GraduationCap className="mr-2 h-4 w-4 text-primary" />
-                Proyecto RSA999
-            </Button>
-        </div>
         
           <div className="space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-1">
@@ -465,7 +433,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                                 <div className="space-y-0.5">
                                     {categories.map((category) => (
                                         <div key={category.id} className="group relative flex items-center w-full justify-start rounded-md text-xs font-medium h-8 px-3 hover:bg-accent">
-                                            <Popover open={openPopoverId === category.id} onOpenChange={(isOpen) => setOpenPopoverId(isOpen ? category.id : null)}>
+                                            <Popover border-none open={openPopoverId === category.id} onOpenChange={(isOpen) => setOpenPopoverId(isOpen ? category.id : null)}>
                                                 <PopoverTrigger asChild>
                                                     <button
                                                     className="w-2.5 h-2.5 rounded-full shrink-0 transition-transform hover:scale-125 focus:outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"

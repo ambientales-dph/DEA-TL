@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -12,12 +11,11 @@ import { useToast } from '@/hooks/use-toast';
 import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { getCardAttachments, type TrelloCardBasic, getCardById, getCardActions, type TrelloAction } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
-import { RSB002_MILESTONES } from '@/lib/rsb002-data';
 import { RSA060_MILESTONES } from '@/lib/rsa060-data';
 import { FeedbackButton } from '@/components/feedback-button';
 import { FeedbackDialog } from '@/components/feedback-dialog';
@@ -28,8 +26,12 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { uploadFileToDrive } from '@/services/google-drive';
 import { Buffer } from 'buffer';
-
-const DEFAULT_CATEGORY_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+  } from '@/components/ui/tooltip';
 
 function getTrelloObjectCreationDate(trelloId: string): Date {
     const timestampHex = trelloId.substring(0, 8);
@@ -60,10 +62,7 @@ export default function Home() {
 
   const milestonesCollection = React.useMemo(() => {
     if (!firestore || !selectedCard) return null;
-    const cardNameLower = selectedCard.name.toLowerCase();
-    if (cardNameLower.includes('rsa999')) {
-      return null;
-    }
+    if (selectedCard.id === 'training-rsa999') return null;
     return collection(firestore, 'projects', selectedCard.id, 'milestones');
   }, [firestore, selectedCard]);
 
@@ -130,10 +129,7 @@ export default function Home() {
             return;
         }
 
-        const cardNameLower = selectedCard.name.toLowerCase();
-        const isDemoProject = cardNameLower.includes('rsa999');
-
-        if (isDemoProject) {
+        if (selectedCard.id === 'training-rsa999') {
             syncPerformedForCard.current = selectedCard.id;
             return;
         }
@@ -265,9 +261,8 @@ export default function Home() {
   }, [isLoaded, hasLoadedFromUrl, handleCardSelect, toast]);
 
   const displayedMilestones = React.useMemo(() => {
-    if (selectedCard) {
-        const cardNameLower = selectedCard.name.toLowerCase();
-        if (cardNameLower.includes('rsa999')) return RSA060_MILESTONES;
+    if (selectedCard?.id === 'training-rsa999') {
+        return RSA060_MILESTONES;
     }
     return milestones || [];
   }, [selectedCard, milestones]);
@@ -293,7 +288,7 @@ export default function Home() {
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
     if (!firestore || !selectedCard) return;
 
-    if (selectedCard.name.toLowerCase().includes('rsa999')) {
+    if (selectedCard.id === 'training-rsa999') {
         toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para el proyecto de entrenamiento." });
         return;
     }
@@ -396,7 +391,7 @@ export default function Home() {
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
     if (!firestore || !selectedCard) return;
 
-    if (selectedCard.name.toLowerCase().includes('rsa999')) {
+    if (selectedCard.id === 'training-rsa999') {
       toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para el proyecto de entrenamiento." });
       return;
     }
@@ -501,7 +496,8 @@ export default function Home() {
   }, []);
   
   const handleCategoryAdd = React.useCallback((name: string) => {
-    setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name, color: DEFAULT_CATEGORY_COLORS[prev.length % DEFAULT_CATEGORY_COLORS.length] }]);
+    const DEFAULT_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
+    setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name, color: DEFAULT_COLORS[prev.length % DEFAULT_COLORS.length] }]);
   }, []);
 
   const handleCategoryUpdate = React.useCallback((categoryId: string, name: string) => {
@@ -557,6 +553,15 @@ export default function Home() {
 
   const handleToggleView = () => setView(prev => prev === 'timeline' ? 'summary' : 'timeline');
 
+  const handleSelectTrainingProject = () => {
+    handleCardSelect({
+        id: 'training-rsa999',
+        name: 'Proyecto de Entrenamiento Maestro - RSA999',
+        url: '',
+        desc: 'Proyecto de ejemplo maestro con hitos de referencia para capacitación.'
+    });
+  };
+
   return (
     <div className="flex h-screen w-full bg-background">
       <Sidebar 
@@ -567,7 +572,6 @@ export default function Home() {
         onCategoryDelete={handleCategoryDelete}
         onCardSelect={handleCardSelect}
         selectedCard={selectedCard}
-        onNewMilestoneClick={() => setIsUploadOpen(true)}
         onGoHome={handleGoHome}
         cardFromUrl={cardFromUrl}
       />
@@ -582,8 +586,9 @@ export default function Home() {
           trelloCardUrl={selectedCard?.url ?? null}
           isProjectLoaded={!!selectedCard}
           onToggleTrelloSummary={() => setIsTrelloSummaryOpen(true)}
+          onSelectTrainingProject={handleSelectTrainingProject}
         />
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden relative">
           {selectedCard && (
               <div className="px-4 md:px-6 py-3 border-b bg-background shrink-0">
                   <h2 className="text-xl font-headline font-medium text-foreground truncate" title={selectedCard.name}>
@@ -591,6 +596,28 @@ export default function Home() {
                   </h2>
               </div>
           )}
+          
+          {selectedCard && selectedCard.id !== 'training-rsa999' && (
+            <div className="absolute top-16 right-6 z-30 no-print">
+               <TooltipProvider>
+                  <Tooltip>
+                     <TooltipTrigger asChild>
+                        <Button 
+                          size="icon" 
+                          className="h-10 w-10 shadow-lg rounded-md"
+                          onClick={() => setIsUploadOpen(true)}
+                        >
+                          <Plus className="h-6 w-6" />
+                        </Button>
+                     </TooltipTrigger>
+                     <TooltipContent side="left">
+                        <p>Hito nuevo</p>
+                     </TooltipContent>
+                  </Tooltip>
+               </TooltipProvider>
+            </div>
+          )}
+
           <div ref={resizeContainerRef} className="flex-1 flex flex-col overflow-hidden">
             {view === 'timeline' ? (
               <>
