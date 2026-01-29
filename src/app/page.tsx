@@ -22,7 +22,7 @@ import { FeedbackButton } from '@/components/feedback-button';
 import { FeedbackDialog } from '@/components/feedback-dialog';
 import { TrelloSummary } from '@/components/trello-summary';
 import { useFirestore, useCollection } from '@/firebase';
-import { collection, doc, setDoc, addDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, addDoc, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { uploadFileToDrive } from '@/services/google-drive';
@@ -57,25 +57,21 @@ export default function Home() {
   const syncPerformedForCard = React.useRef<string | null>(null);
   const { toast } = useToast();
 
-  // Memoize the Firestore query to prevent re-renders
   const milestonesCollection = React.useMemo(() => {
     if (!firestore || !selectedCard) return null;
     const cardNameLower = selectedCard.name.toLowerCase();
-    // Only the designated training project is excluded from Firestore sync
     if (cardNameLower.includes('rsa999')) {
       return null;
     }
     return collection(firestore, 'projects', selectedCard.id, 'milestones');
   }, [firestore, selectedCard]);
 
-  // Hook to get real-time updates from Firestore
   const { data: milestones, loading: firestoreLoading } = useCollection(milestonesCollection);
 
   const isLoadingTimeline = firestoreLoading;
   
-  // Resizing state
   const [isResizing, setIsResizing] = React.useState(false);
-  const [timelinePanelHeight, setTimelinePanelHeight] = React.useState(40); // Initial percentage
+  const [timelinePanelHeight, setTimelinePanelHeight] = React.useState(40);
   const resizeContainerRef = React.useRef<HTMLDivElement>(null);
   const milestoneDateBounds = React.useRef<{start: string; end: string} | null>(null);
 
@@ -127,7 +123,6 @@ export default function Home() {
     setSelectedMilestone(null);
   }, []);
   
-  // Effect to sync Trello data to Firestore (runs ONCE per card load)
   React.useEffect(() => {
     const syncTrelloToFirestore = async () => {
         if (!selectedCard || !firestore || syncPerformedForCard.current === selectedCard.id) {
@@ -135,7 +130,6 @@ export default function Home() {
         }
 
         const cardNameLower = selectedCard.name.toLowerCase();
-        // RSA999 is the only demo project that doesn't sync
         const isDemoProject = cardNameLower.includes('rsa999');
 
         if (isDemoProject) {
@@ -146,8 +140,6 @@ export default function Home() {
         syncPerformedForCard.current = selectedCard.id;
         
         try {
-            console.log(`Syncing Trello data for card ${selectedCard.id} to Firestore...`);
-
             const projectRef = doc(firestore, 'projects', selectedCard.id);
             const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
             const projectData = {
@@ -274,7 +266,6 @@ export default function Home() {
   const displayedMilestones = React.useMemo(() => {
     if (selectedCard) {
         const cardNameLower = selectedCard.name.toLowerCase();
-        // RSA999 is our only master demo project now
         if (cardNameLower.includes('rsa999')) return RSA060_MILESTONES;
     }
     return milestones || [];
@@ -301,7 +292,6 @@ export default function Home() {
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
     if (!firestore || !selectedCard) return;
 
-    // Only exclude RSA999 from manual edits if desired, but here we keep demo lock
     if (selectedCard.name.toLowerCase().includes('rsa999')) {
         toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para el proyecto de entrenamiento." });
         return;
@@ -425,6 +415,35 @@ export default function Home() {
         setSelectedMilestone(updatedMilestone);
     }
   }, [selectedCard, selectedMilestone, firestore, toast]);
+
+  const handleMilestoneDelete = React.useCallback(async (milestoneId: string) => {
+    if (!firestore || !selectedCard) return;
+
+    if (selectedCard.id === 'training-rsa999') {
+      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden borrar hitos del proyecto de entrenamiento." });
+      return;
+    }
+
+    const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestoneId);
+    
+    try {
+      await deleteDoc(milestoneRef);
+      toast({ title: "Hito eliminado", description: "El hito ha sido borrado correctamente." });
+      setSelectedMilestone(null);
+    } catch (serverError: any) {
+        console.error("Error deleting milestone:", serverError);
+        toast({
+            variant: "destructive",
+            title: "Error al eliminar hito",
+            description: serverError.message || "No se pudo comunicar con la base de datos.",
+            duration: 10000,
+        });
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: milestoneRef.path,
+            operation: 'delete'
+        }));
+    }
+  }, [selectedCard, firestore, toast]);
 
 
   const handleSetRange = React.useCallback((rangeType: '1D' | '1M' | '1Y' | 'All') => {
@@ -577,7 +596,7 @@ export default function Home() {
                             Conectando con la base de datos.
                         </p>
                     </div>
-                ) : (displayedMilestones.length > 0 && dateRange) || selectedCard?.name.includes('RSA999') ? (
+                ) : (displayedMilestones.length > 0 && dateRange) || selectedCard?.id === 'training-rsa999' ? (
                     <div className="h-full w-full">
                         <Timeline 
                             milestones={filteredMilestones} 
@@ -602,6 +621,7 @@ export default function Home() {
                               milestone={selectedMilestone}
                               categories={categories}
                               onMilestoneUpdate={handleMilestoneUpdate}
+                              onMilestoneDelete={handleMilestoneDelete}
                               onClose={handleDetailClose}
                               projectName={selectedCard?.name || ''}
                           />

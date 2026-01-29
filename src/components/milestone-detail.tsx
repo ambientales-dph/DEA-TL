@@ -7,7 +7,7 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock, ExternalLink } from 'lucide-react';
+import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock, ExternalLink, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -20,21 +20,26 @@ import { uploadFileToDrive } from '@/services/google-drive';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
 
 interface MilestoneDetailProps {
   milestone: Milestone;
   categories: Category[];
   onMilestoneUpdate: (updatedMilestone: Milestone) => void;
+  onMilestoneDelete: (milestoneId: string) => void;
   onClose: () => void;
   projectName: string;
 }
 
-export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onClose, projectName }: MilestoneDetailProps) {
+export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMilestoneDelete, onClose, projectName }: MilestoneDetailProps) {
   const [newTag, setNewTag] = React.useState('');
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [editableTitle, setEditableTitle] = React.useState('');
   const [isEditingDescription, setIsEditingDescription] = React.useState(false);
   const [editableDescription, setEditableDescription] = React.useState('');
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = React.useState('');
+  
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -45,6 +50,8 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
       setNewTag('');
       setIsEditingTitle(false);
       setIsEditingDescription(false);
+      setIsDeleteDialogOpen(false);
+      setDeleteConfirmation('');
     }
   }, [milestone]);
 
@@ -99,7 +106,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
   const handleTagAdd = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && newTag.trim() !== '' && milestone) {
       e.preventDefault();
-      // Avoid adding duplicate tags
       if (milestone.tags && milestone.tags.includes(newTag.trim())) {
         setNewTag('');
         return;
@@ -196,6 +202,13 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
     }
   };
 
+  const handleDeleteConfirmed = () => {
+    if (deleteConfirmation === 'borralo') {
+      onMilestoneDelete(milestone.id);
+      setIsDeleteDialogOpen(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full p-3 overflow-hidden text-black">
         <div className="flex items-start justify-between gap-2 shrink-0">
@@ -280,6 +293,9 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                 >
                     <Star className={cn("h-5 w-5", milestone.isImportant && "fill-yellow-400 text-yellow-400")} />
                 </button>
+                <Button variant="ghost" size="icon" onClick={() => setIsDeleteDialogOpen(true)} className="h-8 w-8 text-zinc-700 hover:text-destructive transition-colors" title="Eliminar hito">
+                    <Trash2 className="h-5 w-5" />
+                </Button>
                 <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-zinc-700 hover:text-black">
                     <X className="h-5 w-5" />
                 </Button>
@@ -421,6 +437,44 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onCl
                 </Accordion>
             </div>
         </ScrollArea>
+
+        {/* Diálogo de Confirmación de Borrado */}
+        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <DialogContent className="sm:max-w-[400px] bg-zinc-100 text-black border-zinc-400">
+                <DialogHeader>
+                    <DialogTitle className="text-destructive flex items-center gap-2">
+                        <Trash2 className="h-5 w-5" /> Confirmar Eliminación
+                    </DialogTitle>
+                    <DialogDescription className="text-zinc-700 pt-2">
+                        Esta acción es irreversible y eliminará el hito permanentemente. 
+                        Para confirmar, escribí <span className="font-bold text-black select-none">borralo</span> a continuación (no se permite pegar):
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Input
+                        value={deleteConfirmation}
+                        onChange={(e) => setDeleteConfirmation(e.target.value)}
+                        onPaste={(e) => e.preventDefault()}
+                        placeholder="Escribí aquí..."
+                        className="bg-white border-zinc-400 text-black focus:ring-destructive focus:border-destructive"
+                        autoFocus
+                    />
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} className="border-zinc-400 text-black hover:bg-zinc-200">
+                        Cancelar
+                    </Button>
+                    <Button 
+                        variant="destructive" 
+                        onClick={handleDeleteConfirmed} 
+                        disabled={deleteConfirmation !== 'borralo'}
+                        className="disabled:opacity-50"
+                    >
+                        Eliminar definitivamente
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
   );
 }
