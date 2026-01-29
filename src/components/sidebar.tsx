@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Logo } from './logo';
 import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
-import { Plus, Search, UploadCloud, Loader2, X, Pencil, Trash2, Lock, Info } from 'lucide-react';
+import { Plus, Search, UploadCloud, Loader2, X, Pencil, Trash2, Info, GraduationCap } from 'lucide-react';
 import type { Category } from '@/types';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { ColorPicker } from './color-picker';
@@ -114,7 +114,6 @@ export function Sidebar({
       setSelectedBoard(card.idBoard);
       setCardSearchTerm(card.name);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardFromUrl]);
 
   React.useEffect(() => {
@@ -140,7 +139,6 @@ export function Sidebar({
       }
     };
     fetchLists();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBoard]);
 
   React.useEffect(() => {
@@ -168,7 +166,6 @@ export function Sidebar({
         }
     };
     fetchCards();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedList]);
   
   React.useEffect(() => {
@@ -185,12 +182,6 @@ export function Sidebar({
     });
     setFilteredCards(filtered);
   }, [cardSearchTerm, cards]);
-
-  const localOnGoHome = () => {
-    setCardSearchTerm('');
-    setSelectedBoard('');
-    onGoHome();
-  }
 
   const handleColorSelect = (categoryId: string, color: string) => {
     onCategoryColorChange(categoryId, color);
@@ -243,6 +234,15 @@ export function Sidebar({
 
   const handleCardClick = (card: TrelloCardBasic) => {
     onCardSelect(card);
+  }
+
+  const handleTrainingProjectClick = () => {
+    onCardSelect({
+        id: 'training-rsa999',
+        name: 'Proyecto de Entrenamiento Maestro - RSA999',
+        url: '',
+        desc: 'Proyecto de ejemplo maestro con hitos de referencia para capacitación.'
+    });
   }
 
   const handleGlobalSearch = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -302,20 +302,37 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
       </div>
       <div className="flex-1 p-3 flex flex-col gap-4 min-h-0">
         
-        <Button onClick={onNewMilestoneClick} disabled={!selectedCard} size="sm" className="h-8">
+        <Button onClick={onNewMilestoneClick} disabled={!selectedCard || selectedCard.id === 'training-rsa999'} size="sm" className="h-8">
           <UploadCloud className="mr-2 h-4 w-4" />
           Hito nuevo
         </Button>
 
+        {/* Training Section */}
+        <div className="space-y-1">
+             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-1">
+                Entrenamiento
+            </p>
+            <Button 
+                variant={selectedCard?.id === 'training-rsa999' ? "secondary" : "ghost"} 
+                size="sm" 
+                className="w-full justify-start h-8 text-xs font-medium"
+                onClick={handleTrainingProjectClick}
+            >
+                <GraduationCap className="mr-2 h-4 w-4 text-primary" />
+                Proyecto RSA999
+            </Button>
+        </div>
         
           <div className="space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-1">
+                Proyectos Trello
+            </p>
             {isTrelloAvailable === false ? (
                  <Card className="bg-amber-500/10 border-amber-500/30">
                     <CardContent className="pt-4 text-xs text-amber-200/80 flex items-start gap-3">
                         <Info className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                         <div>
                             <p className="font-semibold text-amber-200">Integración con Trello no configurada</p>
-                            <p className="mt-1">Para habilitar esta función, un administrador debe agregar las credenciales de la API de Trello al archivo de configuración del servidor.</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -374,19 +391,6 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                     </div>
                 </>
             )}
-              <Select disabled>
-              <SelectTrigger className="w-full h-8 text-xs">
-                  <SelectValue placeholder="Seleccionar Etapa" />
-              </SelectTrigger>
-              <SelectContent></SelectContent>
-              </Select>
-
-              <Select disabled>
-              <SelectTrigger className="w-full h-8 text-xs">
-                  <SelectValue placeholder="Seleccionar Lote" />
-              </SelectTrigger>
-              <SelectContent></SelectContent>
-              </Select>
           </div>
           
           {(selectedList || isSearching || (!selectedBoard && cardSearchTerm)) && (

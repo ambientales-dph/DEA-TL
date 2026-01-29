@@ -61,7 +61,8 @@ export default function Home() {
   const milestonesCollection = React.useMemo(() => {
     if (!firestore || !selectedCard) return null;
     const cardNameLower = selectedCard.name.toLowerCase();
-    if (cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002') || cardNameLower.includes('rsa060')) {
+    // Only the designated training project is excluded from Firestore sync
+    if (cardNameLower.includes('rsa999')) {
       return null;
     }
     return collection(firestore, 'projects', selectedCard.id, 'milestones');
@@ -134,7 +135,8 @@ export default function Home() {
         }
 
         const cardNameLower = selectedCard.name.toLowerCase();
-        const isDemoProject = cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002') || cardNameLower.includes('rsa060');
+        // RSA999 is the only demo project that doesn't sync
+        const isDemoProject = cardNameLower.includes('rsa999');
 
         if (isDemoProject) {
             syncPerformedForCard.current = selectedCard.id;
@@ -272,8 +274,8 @@ export default function Home() {
   const displayedMilestones = React.useMemo(() => {
     if (selectedCard) {
         const cardNameLower = selectedCard.name.toLowerCase();
-        if (cardNameLower.includes('rsb002') || cardNameLower.includes('rlu002')) return RSB002_MILESTONES;
-        if (cardNameLower.includes('rsa060')) return RSA060_MILESTONES;
+        // RSA999 is our only master demo project now
+        if (cardNameLower.includes('rsa999')) return RSA060_MILESTONES;
     }
     return milestones || [];
   }, [selectedCard, milestones]);
@@ -299,8 +301,9 @@ export default function Home() {
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
     if (!firestore || !selectedCard) return;
 
-    if ((selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060') || selectedCard.name.toLowerCase().includes('rlu002'))) {
-        toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para los proyectos de ejemplo." });
+    // Only exclude RSA999 from manual edits if desired, but here we keep demo lock
+    if (selectedCard.name.toLowerCase().includes('rsa999')) {
+        toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para el proyecto de entrenamiento." });
         return;
     }
 
@@ -393,8 +396,8 @@ export default function Home() {
   const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
     if (!firestore || !selectedCard) return;
 
-    if ((selectedCard.name.toLowerCase().includes('rsb002') || selectedCard.name.toLowerCase().includes('rsa060') || selectedCard.name.toLowerCase().includes('rlu002'))) {
-      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para los proyectos de ejemplo." });
+    if (selectedCard.name.toLowerCase().includes('rsa999')) {
+      toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden guardar cambios para el proyecto de entrenamiento." });
       return;
     }
 
@@ -574,12 +577,12 @@ export default function Home() {
                             Conectando con la base de datos.
                         </p>
                     </div>
-                ) : displayedMilestones.length > 0 && dateRange ? (
+                ) : (displayedMilestones.length > 0 && dateRange) || selectedCard?.name.includes('RSA999') ? (
                     <div className="h-full w-full">
                         <Timeline 
                             milestones={filteredMilestones} 
-                            startDate={dateRange.start}
-                            endDate={dateRange.end}
+                            startDate={dateRange?.start || subMonths(new Date(), 6)}
+                            endDate={dateRange?.end || addMonths(new Date(), 6)}
                             onMilestoneClick={handleMilestoneClick}
                         />
                     </div>
