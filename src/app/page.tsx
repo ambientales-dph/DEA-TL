@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -49,7 +48,6 @@ export default function Home() {
   const [isFeedbackOpen, setIsFeedbackOpen] = React.useState(false);
   const [isTrelloSummaryOpen, setIsTrelloSummaryOpen] = React.useState(false);
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
-  const [hasLoadedFromUrl, setHasLoadedFromUrl] = React.useState(false);
   const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
@@ -80,7 +78,7 @@ export default function Home() {
             const docRef = doc(firestore, 'categories', cat.id);
             batch.set(docRef, cat);
         });
-        batch.commit();
+        batch.commit().catch(err => console.error("Error seeding categories:", err));
     }
   }, [firestore, firestoreCategories]);
 
@@ -112,6 +110,18 @@ export default function Home() {
     }
     return milestones || [];
   }, [selectedCard, milestones, categories]);
+
+  const filteredMilestones = React.useMemo(() => {
+    return (displayedMilestones || [])
+    .filter(milestone => {
+      const term = searchTerm.toLowerCase();
+      if (!term) return true;
+      const normalizedTerm = term.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return [milestone.name, milestone.description, milestone.category.name, ...(milestone.tags || [])]
+        .some(text => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normalizedTerm));
+    })
+    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+  }, [displayedMilestones, searchTerm]);
 
   const isLoadingTimeline = firestoreLoading || categoriesLoading;
   
@@ -166,9 +176,11 @@ export default function Home() {
             const existingHitosByTrelloId = new Map();
             existingDocsSnapshot.docs.forEach(d => {
                 const data = d.data() as Milestone;
+                // Importante: revisamos archivos adjuntos para mapear trelloId
                 data.associatedFiles.forEach(f => {
                     if (f.trelloId) existingHitosByTrelloId.set(f.trelloId, d.id);
                 });
+                // También revisamos si el ID del documento mismo es un hito de Trello
                 if (d.id.startsWith('hito-')) {
                    existingHitosByTrelloId.set(d.id.replace('hito-', ''), d.id);
                 }
@@ -237,7 +249,7 @@ export default function Home() {
                     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', id);
                     batch.delete(milestoneRef);
                 });
-                await batch.commit();
+                batch.commit().catch(err => console.error("Error committing sync batch:", err));
             }
         } catch (error: any) {
             console.error("Error synchronizing Trello:", error);
@@ -338,7 +350,7 @@ export default function Home() {
           name: name,
           description: description,
           occurredAt: finalDate.toISOString(),
-          category: category,
+          category: { id: category.id, name: category.name, color: category.color },
           tags: ['manual'],
           associatedFiles: associatedFiles,
           isImportant: false,
@@ -346,7 +358,14 @@ export default function Home() {
       };
 
       const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
-      await addDoc(milestonesRef, newMilestoneData);
+      addDoc(milestonesRef, newMilestoneData)
+        .catch((serverError) => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: milestonesRef.path,
+                operation: 'create',
+                requestResourceData: newMilestoneData
+            }));
+        });
       
       setIsUploadOpen(false);
       dismiss(toastId);
@@ -363,7 +382,7 @@ export default function Home() {
     }
   }, [categories, selectedCard, firestore, toast]);
 
-  const handleMilestoneUpdate = React.useCallback(async (updatedMilestone: Milestone) => {
+  const handleMilestoneUpdate = React.useCallback((updatedMilestone: Milestone) => {
     if (!firestore || !selectedCard) return;
 
     if (selectedCard.id === 'training-rsa999') {
@@ -373,23 +392,25 @@ export default function Home() {
 
     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
     
-    try {
-      await setDoc(milestoneRef, updatedMilestone, { merge: true });
-      toast({ title: "Hito actualizado" });
-    } catch (serverError: any) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: milestoneRef.path,
-            operation: 'update',
-            requestResourceData: updatedMilestone
-        }));
-    }
-    
-    if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
-        setSelectedMilestone(updatedMilestone);
-    }
+    // Usar mutación no bloqueante
+    setDoc(milestoneRef, updatedMilestone, { merge: true })
+        .then(() => {
+            toast({ title: "Hito actualizado" });
+            // Actualizar localmente si es el seleccionado
+            if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
+                setSelectedMilestone(updatedMilestone);
+            }
+        })
+        .catch((serverError: any) => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: milestoneRef.path,
+                operation: 'update',
+                requestResourceData: updatedMilestone
+            }));
+        });
   }, [selectedCard, selectedMilestone, firestore, toast]);
 
-  const handleMilestoneDelete = React.useCallback(async (milestoneId: string) => {
+  const handleMilestoneDelete = React.useCallback((milestoneId: string) => {
     if (!firestore || !selectedCard) return;
 
     if (selectedCard.id === 'training-rsa999') {
@@ -399,16 +420,17 @@ export default function Home() {
 
     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestoneId);
     
-    try {
-      await deleteDoc(milestoneRef);
-      toast({ title: "Hito eliminado" });
-      setSelectedMilestone(null);
-    } catch (serverError: any) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: milestoneRef.path,
-            operation: 'delete'
-        }));
-    }
+    deleteDoc(milestoneRef)
+        .then(() => {
+            toast({ title: "Hito eliminado" });
+            setSelectedMilestone(null);
+        })
+        .catch((serverError: any) => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: milestoneRef.path,
+                operation: 'delete'
+            }));
+        });
   }, [selectedCard, firestore, toast]);
 
 
@@ -442,41 +464,59 @@ export default function Home() {
     syncPerformedForCard.current = null;
   }, []);
 
-  const filteredMilestones = (displayedMilestones || [])
-    .filter(milestone => {
-      const term = searchTerm.toLowerCase();
-      if (!term) return true;
-      const normalizedTerm = term.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return [milestone.name, milestone.description, milestone.category.name, ...(milestone.tags || [])]
-        .some(text => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normalizedTerm));
-    })
-    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
-
-  const handleCategoryColorChange = React.useCallback(async (categoryId: string, color: string) => {
+  const handleCategoryColorChange = React.useCallback((categoryId: string, color: string) => {
     if (!firestore) return;
     const catRef = doc(firestore, 'categories', categoryId);
-    updateDoc(catRef, { color });
+    updateDoc(catRef, { color })
+        .catch(err => {
+             errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: catRef.path,
+                operation: 'update',
+                requestResourceData: { color }
+            }));
+        });
   }, [firestore]);
   
-  const handleCategoryAdd = React.useCallback(async (name: string) => {
+  const handleCategoryAdd = React.useCallback((name: string) => {
     if (!firestore) return;
     const DEFAULT_COLORS = ['#a3e635', '#22c55e', '#14b8a6', '#0ea5e9', '#4f46e5', '#8b5cf6', '#be185d', '#f97316', '#facc15'];
     const color = DEFAULT_COLORS[categories.length % DEFAULT_COLORS.length];
-    addDoc(collection(firestore, 'categories'), { name, color });
+    const newCat = { name, color };
+    addDoc(collection(firestore, 'categories'), newCat)
+        .catch(err => {
+             errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: 'categories',
+                operation: 'create',
+                requestResourceData: newCat
+            }));
+        });
   }, [firestore, categories]);
 
-  const handleCategoryUpdate = React.useCallback(async (categoryId: string, name: string) => {
+  const handleCategoryUpdate = React.useCallback((categoryId: string, name: string) => {
     if (!firestore) return;
     const newName = name.trim();
     if (!newName) return;
     const catRef = doc(firestore, 'categories', categoryId);
-    updateDoc(catRef, { name: newName });
+    updateDoc(catRef, { name: newName })
+        .catch(err => {
+             errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: catRef.path,
+                operation: 'update',
+                requestResourceData: { name: newName }
+            }));
+        });
   }, [firestore]);
   
-  const handleCategoryDelete = React.useCallback(async (categoryId: string) => {
+  const handleCategoryDelete = React.useCallback((categoryId: string) => {
     if (!firestore) return;
     const catRef = doc(firestore, 'categories', categoryId);
-    deleteDoc(catRef);
+    deleteDoc(catRef)
+        .catch(err => {
+             errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: catRef.path,
+                operation: 'delete'
+            }));
+        });
   }, [firestore]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
