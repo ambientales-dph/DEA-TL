@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "associatedFile": {
@@ -8,7 +9,9 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "size": { "type": "string" },
-        "type": { "type": "string", "enum": ["document", "image", "video", "audio", "other"] }
+        "type": { "type": "string", "enum": ["document", "image", "video", "audio", "other"] },
+        "url": { "type": "string", "format": "uri" },
+        "driveId": { "type": "string" }
       },
       "required": ["id", "name", "size", "type"]
     },
@@ -73,6 +76,10 @@
     "providers": []
   },
   "firestore": {
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/backend/entities/category" },
+      "description": "Global categories for milestones, persistent across projects."
+    },
     "/projects/{projectId}": {
       "schema": { "$ref": "#/backend/entities/project" },
       "description": "Stores project-level information like its name and code."
