@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -17,7 +18,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { uploadFileToDrive } from '@/services/google-drive';
-import { uploadAttachmentToCard, attachUrlToCard } from '@/services/trello';
+import { uploadAttachmentToCard, attachUrlToCard, getCardAttachments } from '@/services/trello';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -163,45 +164,68 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
     if (e.target) e.target.value = '';
 
     const { id: toastId, update, dismiss } = toast({
-      title: "Subiendo archivos...",
-      description: `Procesando ${filesToUpload.length} archivo(s).`,
+      title: "Verificando Trello...",
+      description: `Comprobando ${filesToUpload.length} archivo(s) para evitar duplicados.`,
       duration: Infinity,
     });
 
     try {
+      // Refresh current Trello attachments to avoid duplicating existing files
+      let currentAttachments: any[] = [];
+      if (cardId) {
+        currentAttachments = await getCardAttachments(cardId);
+      }
+      const existingNamesMap = new Map(currentAttachments.map(a => [a.fileName, a]));
+
       const codeMatch = projectName.match(/\b([A-Z]{3}\d{3})\b/i);
       const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
 
       const newAssociatedFiles: AssociatedFile[] = [];
       for (const file of filesToUpload) {
-        update({ id: toastId, description: `Subiendo "${file.name}"...` });
+        // Check if file is already associated with this milestone locally
+        if (milestone.associatedFiles.some(af => af.name === file.name)) {
+          update({ id: toastId, title: "Archivo ya vinculado", description: `"${file.name}" ya forma parte de este hito.` });
+          continue;
+        }
 
-        const arrayBuffer = await file.arrayBuffer();
-        const base64Data = Buffer.from(arrayBuffer).toString('base64');
+        update({ id: toastId, description: `Procesando "${file.name}"...` });
 
         let fileId: string;
         let fileUrl: string;
         let trelloId: string | null = null;
         let driveId: string | null = null;
 
-        if (file.size < 10 * 1024 * 1024 && cardId) {
-            update({ id: toastId, title: "Subiendo a Trello...", description: file.name });
-            const trelloAtt = await uploadAttachmentToCard(cardId, file.name, base64Data);
-            if (!trelloAtt) throw new Error("Error en Trello");
-            fileId = trelloAtt.id;
-            fileUrl = trelloAtt.url;
-            trelloId = trelloAtt.id;
+        // Check for existing attachment on the card to reuse instead of re-uploading
+        const existingAtt = existingNamesMap.get(file.name);
+
+        if (existingAtt) {
+            update({ id: toastId, title: "Archivo reutilizado", description: `"${file.name}" ya existe en Trello.` });
+            fileId = existingAtt.id;
+            fileUrl = existingAtt.url;
+            trelloId = existingAtt.id;
         } else {
-            update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: file.name });
-            const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
-            fileId = driveResult.id;
-            fileUrl = driveResult.webViewLink;
-            driveId = driveResult.id;
-            
-            if (cardId) {
-                update({ id: toastId, title: "Vinculando Drive con Trello...", description: file.name });
-                const trelloAtt = await attachUrlToCard(cardId, file.name, driveResult.webViewLink);
-                if (trelloAtt) trelloId = trelloAtt.id;
+            const arrayBuffer = await file.arrayBuffer();
+            const base64Data = Buffer.from(arrayBuffer).toString('base64');
+
+            if (file.size < 10 * 1024 * 1024 && cardId) {
+                update({ id: toastId, title: "Subiendo a Trello...", description: file.name });
+                const trelloAtt = await uploadAttachmentToCard(cardId, file.name, base64Data);
+                if (!trelloAtt) throw new Error("Error en Trello");
+                fileId = trelloAtt.id;
+                fileUrl = trelloAtt.url;
+                trelloId = trelloAtt.id;
+            } else {
+                update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: file.name });
+                const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
+                fileId = driveResult.id;
+                fileUrl = driveResult.webViewLink;
+                driveId = driveResult.id;
+                
+                if (cardId) {
+                    update({ id: toastId, title: "Vinculando Drive con Trello...", description: file.name });
+                    const trelloAtt = await attachUrlToCard(cardId, file.name, driveResult.webViewLink);
+                    if (trelloAtt) trelloId = trelloAtt.id;
+                }
             }
         }
 
@@ -228,7 +252,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
       }
 
       dismiss(toastId);
-      toast({ title: "Archivos añadidos" });
+      toast({ title: "Sincronización finalizada", description: "Archivos vinculados correctamente." });
     } catch (error: any) {
       console.error("Error adding files:", error);
       dismiss(toastId);
