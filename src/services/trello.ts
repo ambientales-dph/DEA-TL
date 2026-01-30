@@ -330,3 +330,26 @@ export async function deleteAttachmentFromCard(cardId: string, attachmentId: str
         return false;
     }
 }
+
+/**
+ * Deletes an action (comment) from Trello.
+ */
+export async function deleteAction(actionId: string): Promise<boolean> {
+    const authParams = getTrelloAuthParams();
+    if (!authParams) return false;
+
+    const url = `https://api.trello.com/1/actions/${actionId}?${authParams}`;
+    
+    try {
+        const response = await fetch(url, { method: 'DELETE' });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Trello Action Delete Error:', errorText);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('Error deleting action from Trello:', error);
+        return false;
+    }
+}

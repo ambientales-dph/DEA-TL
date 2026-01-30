@@ -12,7 +12,7 @@ import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format,
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus } from 'lucide-react';
-import { getCardAttachments, type TrelloCardBasic, getCardActions, uploadAttachmentToCard, attachUrlToCard } from '@/services/trello';
+import { getCardAttachments, type TrelloCardBasic, getCardActions, uploadAttachmentToCard, attachUrlToCard, deleteAttachmentFromCard, deleteAction } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
@@ -171,6 +171,7 @@ export default function Home() {
             ]);
 
             const currentTrelloAttachmentIds = new Set(attachments.map(a => a.id));
+            const currentTrelloActionIds = new Set(actions.map(a => a.id));
             const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
             const existingDocsSnapshot = await getDocs(milestonesRef);
             
@@ -182,7 +183,7 @@ export default function Home() {
                 const data = d.data() as Milestone;
                 let milestoneChanged = false;
 
-                // Sincronización PROFUNDA de archivos: Eliminar referencias a archivos que ya no existen en Trello
+                // Sincronización PROFUNDA de archivos
                 const validFiles = data.associatedFiles.filter(f => {
                     if (f.trelloId && !currentTrelloAttachmentIds.has(f.trelloId)) {
                         milestoneChanged = true;
@@ -203,7 +204,8 @@ export default function Home() {
                     if (f.trelloId) existingHitosByTrelloId.set(f.trelloId, d.id);
                 });
                 if (d.id.startsWith('hito-')) {
-                   existingHitosByTrelloId.set(d.id.replace('hito-', ''), d.id);
+                   const possibleTrelloId = d.id.replace('hito-', '');
+                   existingHitosByTrelloId.set(possibleTrelloId, d.id);
                 }
             });
 
@@ -261,11 +263,16 @@ export default function Home() {
 
             const allTrelloItems = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
             
-            const currentTrelloIds = new Set([selectedCard.id, ...attachments.map(a => a.id), ...actions.map(a => a.id)]);
             const idsToRemove = existingDocsSnapshot.docs
               .filter(d => d.id.startsWith('hito-'))
               .map(d => d.id)
-              .filter(id => !currentTrelloIds.has(id.replace('hito-', '')) && !id.includes('creacion'));
+              .filter(id => {
+                  const possibleId = id.replace('hito-', '');
+                  // No remover el hito de creación
+                  if (id.includes('creacion')) return false;
+                  // Si no está ni en adjuntos ni en acciones de Trello, borrar de Firestore
+                  return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(possibleId);
+              });
 
             if (allTrelloItems.length > 0 || idsToRemove.length > 0 || hasChanges) {
                 allTrelloItems.forEach(milestone => {
@@ -313,7 +320,6 @@ export default function Home() {
     });
 
     try {
-      // Fetch current Trello attachments to avoid duplicates
       const currentAttachments = await getCardAttachments(selectedCard.id);
       const existingNamesMap = new Map(currentAttachments.map(a => [a.fileName, a]));
 
@@ -451,12 +457,33 @@ export default function Home() {
         });
   }, [selectedCard, selectedMilestone, firestore, toast]);
 
-  const handleMilestoneDelete = React.useCallback((milestoneId: string) => {
+  const handleMilestoneDelete = React.useCallback(async (milestoneId: string) => {
     if (!firestore || !selectedCard) return;
 
     if (selectedCard.id === 'training-rsa999') {
       toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden borrar hitos del proyecto de entrenamiento." });
       return;
+    }
+
+    const hitoToDelete = milestones?.find(m => m.id === milestoneId);
+    if (!hitoToDelete) return;
+
+    // Lógica para sincronizar eliminación con Trello
+    try {
+        if (milestoneId.startsWith('hito-')) {
+            const trelloObjectId = milestoneId.replace('hito-', '');
+            
+            // Si el hito representa un adjunto o acción, intentar borrarlo en Trello
+            if (hitoToDelete.associatedFiles.length > 0) {
+                for (const file of hitoToDelete.associatedFiles) {
+                    if (file.trelloId) await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
+                }
+            } else if (hitoToDelete.tags?.includes('comentario')) {
+                await deleteAction(trelloObjectId);
+            }
+        }
+    } catch (e) {
+        console.warn("No se pudo eliminar el objeto de Trello, procediendo con Firestore.", e);
     }
 
     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestoneId);
@@ -472,7 +499,7 @@ export default function Home() {
                 operation: 'delete'
             }));
         });
-  }, [selectedCard, firestore, toast]);
+  }, [selectedCard, firestore, toast, milestones]);
 
 
   const handleSetRange = React.useCallback((rangeType: '1D' | '1M' | '1Y' | 'All') => {
