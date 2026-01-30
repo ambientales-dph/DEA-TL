@@ -111,13 +111,12 @@ export function Header({
               <Tooltip>
                   <TooltipTrigger asChild>
                       <Button 
-                        size="sm" 
+                        size="icon" 
                         variant="secondary" 
                         className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 ml-2"
                         onClick={onSelectTrainingProject}
                       >
-                          <GraduationCap className="h-4 w-4" />
-                          <span className="hidden lg:inline ml-2">Entrenamiento</span>
+                          <GraduationCap className="h-5 w-5" />
                       </Button>
                   </TooltipTrigger>
                   <TooltipContent>
