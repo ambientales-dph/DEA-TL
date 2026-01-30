@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -171,12 +170,35 @@ export default function Home() {
                 getCardActions(selectedCard.id),
             ]);
 
+            const currentTrelloAttachmentIds = new Set(attachments.map(a => a.id));
             const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
             const existingDocsSnapshot = await getDocs(milestonesRef);
             
             const existingHitosByTrelloId = new Map();
+            const batch = writeBatch(firestore);
+            let hasChanges = false;
+
             existingDocsSnapshot.docs.forEach(d => {
                 const data = d.data() as Milestone;
+                let milestoneChanged = false;
+
+                // Sincronización PROFUNDA de archivos: Eliminar referencias a archivos que ya no existen en Trello
+                const validFiles = data.associatedFiles.filter(f => {
+                    if (f.trelloId && !currentTrelloAttachmentIds.has(f.trelloId)) {
+                        milestoneChanged = true;
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (milestoneChanged) {
+                    batch.update(d.ref, { 
+                        associatedFiles: validFiles,
+                        history: [...data.history, `${format(new Date(), "PPpp", { locale: es })} - Limpieza automática: se removió un archivo que ya no existe en Trello.`]
+                    });
+                    hasChanges = true;
+                }
+
                 data.associatedFiles.forEach(f => {
                     if (f.trelloId) existingHitosByTrelloId.set(f.trelloId, d.id);
                 });
@@ -245,8 +267,7 @@ export default function Home() {
               .map(d => d.id)
               .filter(id => !currentTrelloIds.has(id.replace('hito-', '')) && !id.includes('creacion'));
 
-            if (allTrelloItems.length > 0 || idsToRemove.length > 0) {
-                const batch = writeBatch(firestore);
+            if (allTrelloItems.length > 0 || idsToRemove.length > 0 || hasChanges) {
                 allTrelloItems.forEach(milestone => {
                     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestone.id);
                     batch.set(milestoneRef, milestone, { merge: true });
@@ -303,8 +324,9 @@ export default function Home() {
       if (files && files.length > 0) {
         const totalFiles = files.length;
         for (const [index, file] of files.entries()) {
-          const progressText = `(${index + 1}/${totalFiles}) ${file.name}`;
+          const progressText = `Archivo ${index + 1} de ${totalFiles}: ${file.name}`;
           setUploadText(progressText);
+          setUploadProgress(((index) / totalFiles) * 100);
           update({ id: toastId, description: progressText });
           
           let fileId: string;
@@ -312,11 +334,10 @@ export default function Home() {
           let trelloId: string | null = null;
           let driveId: string | null = null;
 
-          // Check for existing attachment with same name to avoid duplicates
           const existingAtt = existingNamesMap.get(file.name);
 
           if (existingAtt) {
-            update({ id: toastId, title: "Archivo ya existe en Trello", description: `Usando versión existente de ${file.name}` });
+            update({ id: toastId, title: "Archivo ya existe en Trello", description: `Reutilizando ${file.name}` });
             fileId = existingAtt.id;
             fileUrl = existingAtt.url;
             trelloId = existingAtt.id;

@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -18,7 +17,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { uploadFileToDrive } from '@/services/google-drive';
-import { uploadAttachmentToCard, attachUrlToCard, getCardAttachments } from '@/services/trello';
+import { uploadAttachmentToCard, attachUrlToCard, getCardAttachments, deleteAttachmentFromCard } from '@/services/trello';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -43,6 +42,9 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = React.useState('');
   
+  const [fileToDelete, setFileToDelete] = React.useState<AssociatedFile | null>(null);
+  const [fileDeleteConfirmation, setFileDeleteConfirmation] = React.useState('');
+
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -55,6 +57,8 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
       setIsEditingDescription(false);
       setIsDeleteDialogOpen(false);
       setDeleteConfirmation('');
+      setFileToDelete(null);
+      setFileDeleteConfirmation('');
     }
   }, [milestone]);
 
@@ -170,7 +174,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
     });
 
     try {
-      // Refresh current Trello attachments to avoid duplicating existing files
       let currentAttachments: any[] = [];
       if (cardId) {
         currentAttachments = await getCardAttachments(cardId);
@@ -182,7 +185,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
 
       const newAssociatedFiles: AssociatedFile[] = [];
       for (const file of filesToUpload) {
-        // Check if file is already associated with this milestone locally
         if (milestone.associatedFiles.some(af => af.name === file.name)) {
           update({ id: toastId, title: "Archivo ya vinculado", description: `"${file.name}" ya forma parte de este hito.` });
           continue;
@@ -195,7 +197,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
         let trelloId: string | null = null;
         let driveId: string | null = null;
 
-        // Check for existing attachment on the card to reuse instead of re-uploading
         const existingAtt = existingNamesMap.get(file.name);
 
         if (existingAtt) {
@@ -264,6 +265,45 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
     if (deleteConfirmation === 'borralo') {
       onMilestoneDelete(milestone.id);
       setIsDeleteDialogOpen(false);
+    }
+  };
+
+  const handleFileDeleteRequest = (file: AssociatedFile) => {
+    setFileToDelete(file);
+    setFileDeleteConfirmation('');
+  };
+
+  const handleFileDeleteConfirm = async () => {
+    if (fileDeleteConfirmation !== 'borralo' || !fileToDelete || !milestone) return;
+
+    const fileToRem = fileToDelete;
+    setFileToDelete(null);
+
+    const { id: toastId, update, dismiss } = toast({
+      title: "Eliminando archivo...",
+      description: fileToRem.name,
+      duration: Infinity,
+    });
+
+    try {
+        if (cardId && fileToRem.trelloId) {
+            update({ id: toastId, description: `Eliminando de Trello: ${fileToRem.name}` });
+            await deleteAttachmentFromCard(cardId, fileToRem.trelloId);
+        }
+
+        const updatedFiles = milestone.associatedFiles.filter(f => f.id !== fileToRem.id);
+        onMilestoneUpdate({
+            ...milestone,
+            associatedFiles: updatedFiles,
+            history: [...milestone.history, createLogEntry(`Archivo eliminado: "${fileToRem.name}"`)],
+        });
+
+        dismiss(toastId);
+        toast({ title: "Archivo eliminado", description: `"${fileToRem.name}" fue removido correctamente.` });
+    } catch (error: any) {
+        console.error("Error deleting file:", error);
+        dismiss(toastId);
+        toast({ variant: "destructive", title: "Error al eliminar archivo", description: error.message });
     }
   };
 
@@ -440,33 +480,34 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                     {milestone.associatedFiles.length > 0 ? (
                         <ul className="space-y-1.5 border border-zinc-400 rounded-md p-2 bg-zinc-200">
                            {milestone.associatedFiles.map(file => (
-                                <li key={file.id}>
-                                    {file.url ? (
-                                        <a 
-                                            href={file.url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="flex items-center justify-between p-1.5 bg-zinc-100 rounded-md hover:bg-zinc-50 transition-colors group/link"
-                                            title={`Abrir "${file.name}" en una nueva pestaña`}
-                                        >
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <FileIcon type={file.type} />
-                                                <span className="text-xs font-medium truncate text-black">{file.name}</span>
-                                            </div>
-                                            <div className="flex items-center shrink-0 ml-2">
-                                                <span className="text-xs text-zinc-700 mr-2">{file.size}</span>
-                                                <ExternalLink className="h-3 w-3 text-zinc-500 group-hover/link:text-primary transition-colors" />
-                                            </div>
-                                        </a>
-                                    ) : (
-                                        <div className="flex items-center justify-between p-1.5 bg-zinc-100 rounded-md">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <FileIcon type={file.type} />
-                                                <span className="text-xs font-medium truncate text-black">{file.name}</span>
-                                            </div>
-                                            <span className="text-xs text-zinc-700 shrink-0 ml-2">{file.size}</span>
+                                <li key={file.id} className="group/file flex items-center justify-between p-1.5 bg-zinc-100 rounded-md hover:bg-zinc-50 transition-colors">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <FileIcon type={file.type} />
+                                        <span className="text-xs font-medium truncate text-black" title={file.name}>{file.name}</span>
+                                    </div>
+                                    <div className="flex items-center shrink-0 ml-2 gap-2">
+                                        <span className="text-xs text-zinc-700">{file.size}</span>
+                                        <div className="flex items-center gap-1">
+                                            {file.url && (
+                                                <a 
+                                                    href={file.url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="p-1 rounded-md hover:bg-primary/10 text-zinc-500 hover:text-primary transition-colors"
+                                                    title="Abrir archivo"
+                                                >
+                                                    <ExternalLink className="h-3.5 w-3.5" />
+                                                </a>
+                                            )}
+                                            <button 
+                                                onClick={() => handleFileDeleteRequest(file)}
+                                                className="p-1 rounded-md hover:bg-destructive/10 text-zinc-500 hover:text-destructive transition-colors"
+                                                title="Eliminar archivo"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
                                         </div>
-                                    )}
+                                    </div>
                                 </li>
                             ))}
                         </ul>
@@ -496,11 +537,12 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
             </div>
         </ScrollArea>
 
+        {/* Dialogo para borrar Hito */}
         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
             <DialogContent className="sm:max-w-[400px] bg-zinc-100 text-black border-zinc-400">
                 <DialogHeader>
                     <DialogTitle className="text-destructive flex items-center gap-2">
-                        <Trash2 className="h-5 w-5" /> Confirmar Eliminación
+                        <Trash2 className="h-5 w-5" /> Confirmar Eliminación del Hito
                     </DialogTitle>
                     <DialogDescription className="text-zinc-700 pt-2">
                         Esta acción es irreversible y eliminará el hito permanentemente. 
@@ -527,7 +569,45 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                         disabled={deleteConfirmation !== 'borralo'}
                         className="disabled:opacity-50"
                     >
-                        Eliminar definitivamente
+                        Eliminar hito
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        {/* Dialogo para borrar Archivo */}
+        <Dialog open={!!fileToDelete} onOpenChange={(open) => !open && setFileToDelete(null)}>
+            <DialogContent className="sm:max-w-[400px] bg-zinc-100 text-black border-zinc-400">
+                <DialogHeader>
+                    <DialogTitle className="text-destructive flex items-center gap-2">
+                        <Trash2 className="h-5 w-5" /> Confirmar Eliminación de Archivo
+                    </DialogTitle>
+                    <DialogDescription className="text-zinc-700 pt-2">
+                        Se eliminará el archivo <span className="font-bold text-black">{fileToDelete?.name}</span> de este hito (y de Trello si corresponde).
+                        Para confirmar, escribí <span className="font-bold text-black select-none">borralo</span> a continuación:
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Input
+                        value={fileDeleteConfirmation}
+                        onChange={(e) => setFileDeleteConfirmation(e.target.value)}
+                        onPaste={(e) => e.preventDefault()}
+                        placeholder="Escribí aquí..."
+                        className="bg-white border-zinc-400 text-black focus:ring-destructive focus:border-destructive"
+                        autoFocus
+                    />
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="outline" onClick={() => setFileToDelete(null)} className="border-zinc-400 text-black hover:bg-zinc-200">
+                        Cancelar
+                    </Button>
+                    <Button 
+                        variant="destructive" 
+                        onClick={handleFileDeleteConfirm} 
+                        disabled={fileDeleteConfirmation !== 'borralo'}
+                        className="disabled:opacity-50"
+                    >
+                        Eliminar archivo
                     </Button>
                 </DialogFooter>
             </DialogContent>

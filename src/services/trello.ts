@@ -307,3 +307,26 @@ export async function attachUrlToCard(cardId: string, name: string, attachmentUr
         throw error;
     }
 }
+
+/**
+ * Deletes an attachment from a Trello card.
+ */
+export async function deleteAttachmentFromCard(cardId: string, attachmentId: string): Promise<boolean> {
+    const authParams = getTrelloAuthParams();
+    if (!authParams) return false;
+
+    const url = `https://api.trello.com/1/cards/${cardId}/attachments/${attachmentId}?${authParams}`;
+    
+    try {
+        const response = await fetch(url, { method: 'DELETE' });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Trello Attachment Delete Error:', errorText);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('Error deleting attachment from Trello:', error);
+        return false;
+    }
+}
