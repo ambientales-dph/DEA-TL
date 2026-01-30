@@ -102,6 +102,17 @@ export default function Home() {
     }) as Milestone[];
   }, [rawMilestones, categories]);
 
+  // Se mueve displayedMilestones antes de filteredMilestones para evitar ReferenceError
+  const displayedMilestones = React.useMemo(() => {
+    if (selectedCard?.id === 'training-rsa999') {
+        return RSA060_MILESTONES.map(m => {
+            const currentCat = categories.find(c => c.id === m.category.id);
+            return currentCat ? { ...m, category: currentCat } : m;
+        });
+    }
+    return milestones || [];
+  }, [selectedCard, milestones, categories]);
+
   const isLoadingTimeline = firestoreLoading || categoriesLoading;
   
   const [isResizing, setIsResizing] = React.useState(false);
@@ -516,16 +527,6 @@ export default function Home() {
         desc: 'Proyecto de ejemplo maestro con hitos de referencia para capacitación.'
     });
   };
-
-  const displayedMilestones = React.useMemo(() => {
-    if (selectedCard?.id === 'training-rsa999') {
-        return RSA060_MILESTONES.map(m => {
-            const currentCat = categories.find(c => c.id === m.category.id);
-            return currentCat ? { ...m, category: currentCat } : m;
-        });
-    }
-    return milestones || [];
-  }, [selectedCard, milestones, categories]);
 
   React.useEffect(() => {
     if (displayedMilestones.length > 0) {
