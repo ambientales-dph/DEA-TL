@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -102,7 +103,6 @@ export default function Home() {
     }) as Milestone[];
   }, [rawMilestones, categories]);
 
-  // Se mueve displayedMilestones antes de filteredMilestones para evitar ReferenceError
   const displayedMilestones = React.useMemo(() => {
     if (selectedCard?.id === 'training-rsa999') {
         return RSA060_MILESTONES.map(m => {
@@ -221,7 +221,6 @@ export default function Home() {
 
             const allTrelloItems = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
             
-            // Sync deletions
             const currentTrelloIds = new Set([selectedCard.id, ...attachments.map(a => a.id), ...actions.map(a => a.id)]);
             const idsToRemove = existingDocsSnapshot.docs
               .filter(d => d.id.startsWith('hito-'))
@@ -644,6 +643,7 @@ export default function Home() {
                               onMilestoneDelete={handleMilestoneDelete}
                               onClose={handleDetailClose}
                               projectName={selectedCard?.name || ''}
+                              cardId={selectedCard?.id || null}
                           />
                       </div>
                    </>

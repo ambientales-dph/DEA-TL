@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -30,9 +31,10 @@ interface MilestoneDetailProps {
   onMilestoneDelete: (milestoneId: string) => void;
   onClose: () => void;
   projectName: string;
+  cardId: string | null;
 }
 
-export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMilestoneDelete, onClose, projectName }: MilestoneDetailProps) {
+export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMilestoneDelete, onClose, projectName, cardId }: MilestoneDetailProps) {
   const [newTag, setNewTag] = React.useState('');
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [editableTitle, setEditableTitle] = React.useState('');
@@ -158,17 +160,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
   const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !milestone) return;
 
-    // Detect card ID from parent structure or pass it as prop. 
-    // For now we use the path from Firestore to extract the project (card) ID.
-    const cardIdMatch = milestone.id.match(/hito-(.+)/);
-    // Since we don't have a direct cardId prop here, we'll try to find it in the URL or context.
-    // In Home, the selectedCard.id is available. Let's assume we can get it from the milestone's path or project context.
-    // For now, if we can't find it, we'll show an error.
-    
-    const cardId = window.location.search.includes('cardId') 
-        ? new URLSearchParams(window.location.search).get('cardId') 
-        : null; // This is a bit brittle. Better to pass it as a prop.
-
     const filesToUpload = Array.from(e.target.files);
     if (e.target) e.target.value = '';
 
@@ -194,7 +185,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
         let trelloId: string | undefined;
         let driveId: string | undefined;
 
-        // Determination of upload target based on size
         if (file.size < 10 * 1024 * 1024 && cardId) {
             update({ id: toastId, title: "Subiendo a Trello...", description: file.name });
             const trelloAtt = await uploadAttachmentToCard(cardId, file.name, base64Data);
@@ -203,14 +193,12 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
             fileUrl = trelloAtt.url;
             trelloId = trelloAtt.id;
         } else {
-            // Handle Drive upload (requires authentication set up tomorrow)
             update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: file.name });
             const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
             fileId = driveResult.id;
             fileUrl = driveResult.webViewLink;
             driveId = driveResult.id;
             
-            // Link to Trello if cardId is available
             if (cardId) {
                 update({ id: toastId, title: "Vinculando Drive con Trello...", description: file.name });
                 const trelloAtt = await attachUrlToCard(cardId, file.name, driveResult.webViewLink);
