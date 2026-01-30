@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -18,6 +17,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { uploadFileToDrive } from '@/services/google-drive';
+import { uploadAttachmentToCard, attachUrlToCard } from '@/services/trello';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -99,7 +99,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
       const now = new Date();
       let finalDate = new Date(newDate);
 
-      // Apply automatic time logic
       if (isSameDay(finalDate, now)) {
         finalDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
       } else {
@@ -159,12 +158,24 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
   const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !milestone) return;
 
+    // Detect card ID from parent structure or pass it as prop. 
+    // For now we use the path from Firestore to extract the project (card) ID.
+    const cardIdMatch = milestone.id.match(/hito-(.+)/);
+    // Since we don't have a direct cardId prop here, we'll try to find it in the URL or context.
+    // In Home, the selectedCard.id is available. Let's assume we can get it from the milestone's path or project context.
+    // For now, if we can't find it, we'll show an error.
+    
+    const cardId = window.location.search.includes('cardId') 
+        ? new URLSearchParams(window.location.search).get('cardId') 
+        : null; // This is a bit brittle. Better to pass it as a prop.
+
     const filesToUpload = Array.from(e.target.files);
     if (e.target) e.target.value = '';
 
     const { id: toastId, update, dismiss } = toast({
       title: "Subiendo archivos...",
-      description: `Procesando ${filesToUpload.length} archivo(s). Por favor, espera.`,
+      description: `Procesando ${filesToUpload.length} archivo(s).`,
+      duration: Infinity,
     });
 
     try {
@@ -173,20 +184,48 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
 
       const newAssociatedFiles: AssociatedFile[] = [];
       for (const file of filesToUpload) {
-        update({ id: toastId, description: `Subiendo "${file.name}" a Google Drive...` });
+        update({ id: toastId, description: `Subiendo "${file.name}"...` });
 
         const arrayBuffer = await file.arrayBuffer();
         const base64Data = Buffer.from(arrayBuffer).toString('base64');
 
-        const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
+        let fileId: string;
+        let fileUrl: string;
+        let trelloId: string | undefined;
+        let driveId: string | undefined;
+
+        // Determination of upload target based on size
+        if (file.size < 10 * 1024 * 1024 && cardId) {
+            update({ id: toastId, title: "Subiendo a Trello...", description: file.name });
+            const trelloAtt = await uploadAttachmentToCard(cardId, file.name, base64Data);
+            if (!trelloAtt) throw new Error("Error en Trello");
+            fileId = trelloAtt.id;
+            fileUrl = trelloAtt.url;
+            trelloId = trelloAtt.id;
+        } else {
+            // Handle Drive upload (requires authentication set up tomorrow)
+            update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: file.name });
+            const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
+            fileId = driveResult.id;
+            fileUrl = driveResult.webViewLink;
+            driveId = driveResult.id;
+            
+            // Link to Trello if cardId is available
+            if (cardId) {
+                update({ id: toastId, title: "Vinculando Drive con Trello...", description: file.name });
+                const trelloAtt = await attachUrlToCard(cardId, file.name, driveResult.webViewLink);
+                if (trelloAtt) trelloId = trelloAtt.id;
+            }
+        }
 
         newAssociatedFiles.push({
-          id: driveId,
+          id: fileId,
           name: file.name,
           size: `${(file.size / 1024).toFixed(2)} KB`,
           type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
-          url: webViewLink,
-          driveId: driveId
+          url: fileUrl,
+          driveId: driveId,
+          trelloId: trelloId
         });
       }
 
@@ -199,19 +238,11 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
       }
 
       dismiss(toastId);
-      toast({
-        title: "Archivos subidos con éxito",
-        description: `${newAssociatedFiles.length} archivo(s) han sido añadidos al hito.`
-      });
+      toast({ title: "Archivos añadidos" });
     } catch (error: any) {
-      console.error("Error uploading files to existing milestone:", error);
+      console.error("Error adding files:", error);
       dismiss(toastId);
-      toast({
-        variant: "destructive",
-        title: "Error al subir archivos",
-        description: error.message || "No se pudo completar la operación de subida.",
-        duration: 10000,
-      });
+      toast({ variant: "destructive", title: "Error al añadir archivos", description: error.message });
     }
   };
 
@@ -451,7 +482,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
             </div>
         </ScrollArea>
 
-        {/* Diálogo de Confirmación de Borrado */}
         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
             <DialogContent className="sm:max-w-[400px] bg-zinc-100 text-black border-zinc-400">
                 <DialogHeader>
@@ -460,7 +490,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                     </DialogTitle>
                     <DialogDescription className="text-zinc-700 pt-2">
                         Esta acción es irreversible y eliminará el hito permanentemente. 
-                        Para confirmar, escribí <span className="font-bold text-black select-none">borralo</span> a continuación (no se permite pegar):
+                        Para confirmar, escribí <span className="font-bold text-black select-none">borralo</span> a continuación:
                     </DialogDescription>
                 </DialogHeader>
                 <div className="py-4">

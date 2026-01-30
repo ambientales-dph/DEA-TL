@@ -5,6 +5,7 @@ export interface AssociatedFile {
   type: 'document' | 'image' | 'video' | 'audio' | 'other';
   url?: string;
   driveId?: string;
+  trelloId?: string;
 }
 
 export interface Milestone {

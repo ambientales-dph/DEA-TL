@@ -187,7 +187,6 @@ export async function getCardActions(cardId: string): Promise<TrelloAction[]> {
     const authParams = getTrelloAuthParams();
     if (!authParams) return [];
   
-    // Fetch comments and card movements
     const url = `https://api.trello.com/1/cards/${cardId}/actions?filter=commentCard,updateCard&fields=data,date,type,memberCreator&memberCreator_fields=fullName&${authParams}`;
   
     try {
@@ -245,4 +244,66 @@ export async function getCardById(cardId: string): Promise<TrelloCardBasic | nul
     console.error('Error fetching card from Trello:', error);
     return null;
   }
+}
+
+/**
+ * Uploads a file as an attachment to a Trello card.
+ * @param cardId The Trello card ID.
+ * @param fileName The name for the attachment.
+ * @param base64Data The base64 encoded file content.
+ */
+export async function uploadAttachmentToCard(cardId: string, fileName: string, base64Data: string): Promise<TrelloAttachment | null> {
+    const authParams = getTrelloAuthParams();
+    if (!authParams) return null;
+
+    const url = `https://api.trello.com/1/cards/${cardId}/attachments?${authParams}`;
+    
+    try {
+        const binaryData = Buffer.from(base64Data, 'base64');
+        const formData = new FormData();
+        const blob = new Blob([binaryData]);
+        formData.append('file', blob, fileName);
+        formData.append('name', fileName);
+
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Trello Upload Error:', errorText);
+            throw new Error(`Error de Trello: ${errorText}`);
+        }
+
+        const data = await response.json();
+        return { ...data, fileName: data.name } as TrelloAttachment;
+    } catch (error) {
+        console.error('Error uploading to Trello:', error);
+        throw error;
+    }
+}
+
+/**
+ * Attaches a URL to a Trello card.
+ */
+export async function attachUrlToCard(cardId: string, name: string, attachmentUrl: string): Promise<TrelloAttachment | null> {
+    const authParams = getTrelloAuthParams();
+    if (!authParams) return null;
+
+    const url = `https://api.trello.com/1/cards/${cardId}/attachments?url=${encodeURIComponent(attachmentUrl)}&name=${encodeURIComponent(name)}&${authParams}`;
+    
+    try {
+        const response = await fetch(url, { method: 'POST' });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Trello URL Attach Error:', errorText);
+            throw new Error(`Error de Trello (URL): ${errorText}`);
+        }
+        const data = await response.json();
+        return { ...data, fileName: data.name } as TrelloAttachment;
+    } catch (error) {
+        console.error('Error attaching URL to Trello:', error);
+        throw error;
+    }
 }

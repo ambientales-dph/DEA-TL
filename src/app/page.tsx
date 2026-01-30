@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -13,7 +12,7 @@ import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format,
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus } from 'lucide-react';
-import { getCardAttachments, type TrelloCardBasic, getCardById, getCardActions, type TrelloAction } from '@/services/trello';
+import { getCardAttachments, type TrelloCardBasic, getCardById, getCardActions, uploadAttachmentToCard, attachUrlToCard } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
@@ -59,7 +58,6 @@ export default function Home() {
   const syncPerformedForCard = React.useRef<string | null>(null);
   const { toast } = useToast();
 
-  // Categories from Firestore
   const categoriesCollection = React.useMemo(() => {
     if (!firestore) return null;
     return collection(firestore, 'categories');
@@ -67,7 +65,6 @@ export default function Home() {
 
   const { data: firestoreCategories, loading: categoriesLoading } = useCollection(categoriesCollection);
 
-  // Fallback and state for categories
   const categories = React.useMemo(() => {
     if (firestoreCategories && firestoreCategories.length > 0) {
       return firestoreCategories as Category[];
@@ -75,7 +72,6 @@ export default function Home() {
     return CATEGORIES;
   }, [firestoreCategories]);
 
-  // Seed categories if Firestore is empty
   React.useEffect(() => {
     if (firestore && firestoreCategories && firestoreCategories.length === 0) {
         const batch = writeBatch(firestore);
@@ -95,7 +91,6 @@ export default function Home() {
 
   const { data: rawMilestones, loading: firestoreLoading } = useCollection(milestonesCollection);
 
-  // Normalize milestones to use current category data
   const milestones = React.useMemo(() => {
     if (!rawMilestones) return null;
     return rawMilestones.map(m => {
@@ -142,7 +137,6 @@ export default function Home() {
             
             setDoc(projectRef, projectData, { merge: true })
                 .catch((serverError) => {
-                    console.error("Firestore Project Doc Write Error:", serverError);
                     errorEmitter.emit('permission-error', new FirestorePermissionError({
                         path: projectRef.path,
                         operation: 'update',
@@ -157,7 +151,17 @@ export default function Home() {
 
             const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
             const existingDocsSnapshot = await getDocs(milestonesRef);
-            const existingMilestoneIds = new Set(existingDocsSnapshot.docs.map(d => d.id));
+            
+            const existingHitosByTrelloId = new Map();
+            existingDocsSnapshot.docs.forEach(d => {
+                const data = d.data() as Milestone;
+                data.associatedFiles.forEach(f => {
+                    if (f.trelloId) existingHitosByTrelloId.set(f.trelloId, d.id);
+                });
+                if (d.id.startsWith('hito-')) {
+                   existingHitosByTrelloId.set(d.id.replace('hito-', ''), d.id);
+                }
+            });
 
             const systemCategory = categories.find(c => c.id === 'cat-sistema') || { id: 'cat-sistema', name: 'Sistema', color: '#000000' };
             const creationDate = getTrelloObjectCreationDate(selectedCard.id);
@@ -174,23 +178,27 @@ export default function Home() {
             };
 
             const defaultCategory = categories.find(c => c.name.toLowerCase().includes('trello')) || CATEGORIES[1];
-            const attachmentMilestones: Milestone[] = attachments.map(att => {
-              const fileType: AssociatedFile['type'] = att.mimeType.startsWith('image/') ? 'image' : att.mimeType.startsWith('video/') ? 'video' : att.mimeType.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => att.mimeType.includes(t)) ? 'document' : 'other';
-              const associatedFile: AssociatedFile = { id: `file-${att.id}`, name: att.fileName, size: `${(att.bytes / 1024).toFixed(2)} KB`, type: fileType, url: att.url };
-              return {
-                  id: `hito-${att.id}`,
-                  name: att.fileName,
-                  description: `Archivo adjuntado a la tarjeta de Trello el ${new Date(att.date).toLocaleDateString()}.`,
-                  occurredAt: att.date,
-                  category: defaultCategory, tags: ['adjunto'], associatedFiles: [associatedFile], isImportant: false,
-                  history: [`${format(new Date(), "PPpp", { locale: es })} - Creación desde Trello.`],
-              };
+            const attachmentMilestones: Milestone[] = attachments
+              .filter(att => !existingHitosByTrelloId.has(att.id))
+              .map(att => {
+                const fileType: AssociatedFile['type'] = att.mimeType.startsWith('image/') ? 'image' : att.mimeType.startsWith('video/') ? 'video' : att.mimeType.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => att.mimeType.includes(t)) ? 'document' : 'other';
+                const associatedFile: AssociatedFile = { id: att.id, trelloId: att.id, name: att.fileName, size: `${(att.bytes / 1024).toFixed(2)} KB`, type: fileType, url: att.url };
+                return {
+                    id: `hito-${att.id}`,
+                    name: att.fileName,
+                    description: `Archivo adjuntado a la tarjeta de Trello el ${new Date(att.date).toLocaleDateString()}.`,
+                    occurredAt: att.date,
+                    category: defaultCategory, tags: ['adjunto'], associatedFiles: [associatedFile], isImportant: false,
+                    history: [`${format(new Date(), "PPpp", { locale: es })} - Creación desde Trello.`],
+                };
             });
             
             const commentsCategory = categories.find(c => c.id === 'cat-10') || { id: 'cat-10', name: 'Comentarios', color: '#607D8B' };
             const activityCategory = categories.find(c => c.id === 'cat-11') || { id: 'cat-11', name: 'Actividad de Tarjeta', color: '#9E9E9E' };
 
-            const actionMilestones: Milestone[] = actions.map(action => {
+            const actionMilestones: Milestone[] = actions
+              .filter(action => !existingHitosByTrelloId.has(action.id))
+              .map(action => {
                 let milestone: Milestone | null = null;
                 if (action.type === 'commentCard' && action.data.text) {
                     milestone = { id: `hito-${action.id}`, name: `Comentario de ${action.memberCreator.fullName}`, description: action.data.text, occurredAt: action.date, category: commentsCategory, tags: ['comentario'], associatedFiles: [], isImportant: false, history: [`${format(new Date(), "PPpp", { locale: es })} - Creación desde actividad de Trello.`] };
@@ -200,34 +208,29 @@ export default function Home() {
                 return milestone;
             }).filter((m): m is Milestone => m !== null);
 
-            const allTrelloMilestones = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
+            const allTrelloItems = [creationMilestone, ...attachmentMilestones, ...actionMilestones];
             
-            const newMilestonesToSync = allTrelloMilestones.filter(m => !existingMilestoneIds.has(m.id));
-            
-            // Inconsistency Fix: Identify and remove orphaned Trello milestones
-            const trelloMilestoneIdsInFirestore = Array.from(existingMilestoneIds).filter(id => id.startsWith('hito-'));
-            const currentTrelloIdsSet = new Set(allTrelloMilestones.map(m => m.id));
-            const idsToRemove = trelloMilestoneIdsInFirestore.filter(id => !currentTrelloIdsSet.has(id));
+            // Sync deletions
+            const currentTrelloIds = new Set([selectedCard.id, ...attachments.map(a => a.id), ...actions.map(a => a.id)]);
+            const idsToRemove = existingDocsSnapshot.docs
+              .filter(d => d.id.startsWith('hito-'))
+              .map(d => d.id)
+              .filter(id => !currentTrelloIds.has(id.replace('hito-', '')) && !id.includes('creacion'));
 
-            if (newMilestonesToSync.length > 0 || idsToRemove.length > 0) {
+            if (allTrelloItems.length > 0 || idsToRemove.length > 0) {
                 const batch = writeBatch(firestore);
-                newMilestonesToSync.forEach(milestone => {
+                allTrelloItems.forEach(milestone => {
                     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestone.id);
-                    batch.set(milestoneRef, milestone);
+                    batch.set(milestoneRef, milestone, { merge: true });
                 });
                 idsToRemove.forEach(id => {
                     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', id);
                     batch.delete(milestoneRef);
                 });
-                await batch.commit()
-                toast({ 
-                  title: "Sincronización completa", 
-                  description: `Se agregaron ${newMilestonesToSync.length} y se eliminaron ${idsToRemove.length} hitos de Trello.` 
-                });
+                await batch.commit();
             }
         } catch (error: any) {
-            console.error("Error preparing Trello sync data:", error);
-            toast({ variant: 'destructive', title: 'Error de Sincronización', description: `No se pudieron obtener los datos de Trello: ${error.message}` });
+            console.error("Error synchronizing Trello:", error);
             syncPerformedForCard.current = null;
         }
     };
@@ -235,61 +238,6 @@ export default function Home() {
     syncTrelloToFirestore();
   }, [selectedCard, firestore, categories, toast]);
 
-
-  React.useEffect(() => {
-    if (!hasLoadedFromUrl) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const cardId = urlParams.get('cardId');
-  
-      if (cardId) {
-        setHasLoadedFromUrl(true);
-        const loadCardFromUrl = async () => {
-          try {
-            const card = await getCardById(cardId);
-            if (card) {
-              setCardFromUrl(card);
-              handleCardSelect(card);
-            } else {
-              toast({ variant: "destructive", title: "Tarjeta no encontrada", description: `No se pudo encontrar una tarjeta de Trello con el ID: ${cardId}` });
-            }
-          } catch (error) {
-            console.error("Failed to load card from URL", error);
-            toast({ variant: "destructive", title: "Error al cargar tarjeta", description: "Hubo un problema al intentar cargar la tarjeta desde la URL." });
-          }
-        };
-        loadCardFromUrl();
-      }
-    }
-  }, [hasLoadedFromUrl, handleCardSelect, toast]);
-
-  const displayedMilestones = React.useMemo(() => {
-    if (selectedCard?.id === 'training-rsa999') {
-        // Map training milestones to current category data too
-        return RSA060_MILESTONES.map(m => {
-            const currentCat = categories.find(c => c.id === m.category.id);
-            return currentCat ? { ...m, category: currentCat } : m;
-        });
-    }
-    return milestones || [];
-  }, [selectedCard, milestones, categories]);
-
-
-  React.useEffect(() => {
-    if (displayedMilestones.length > 0) {
-      const allDates = displayedMilestones.map(m => parseISO(m.occurredAt));
-      const oldest = new Date(Math.min(...allDates.map(d => d.getTime())));
-      const newest = new Date(Math.max(...allDates.map(d => d.getTime())));
-      const newBounds = { start: oldest.toISOString(), end: newest.toISOString() };
-      const hasBoundsChanged = newBounds.start !== milestoneDateBounds.current?.start || newBounds.end !== milestoneDateBounds.current?.end;
-      if (hasBoundsChanged) {
-        milestoneDateBounds.current = newBounds;
-        setDateRange({ start: subMonths(oldest, 1), end: addMonths(newest, 1) });
-      }
-    } else {
-        milestoneDateBounds.current = null;
-        setDateRange(null);
-    }
-  }, [displayedMilestones]);
 
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
     if (!firestore || !selectedCard) return;
@@ -301,18 +249,16 @@ export default function Home() {
 
     setIsUploading(true);
     setUploadProgress(0);
-    setUploadText('Iniciando...');
 
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find(c => c.id === categoryId);
     if (!category) {
-        toast({ variant: "destructive", title: "Error al crear hito", description: "La categoría seleccionada no es válida." });
         setIsUploading(false);
         return;
     };
 
     const { id: toastId, update, dismiss } = toast({
-      title: "Iniciando proceso...",
+      title: "Procesando archivos...",
       description: "Por favor, espera.",
       duration: Infinity,
     });
@@ -327,31 +273,49 @@ export default function Home() {
         for (const [index, file] of files.entries()) {
           const progressText = `(${index + 1}/${totalFiles}) ${file.name}`;
           setUploadText(progressText);
-          update({ id: toastId, title: `Subiendo ${totalFiles} archivo(s)...`, description: progressText });
+          update({ id: toastId, description: progressText });
           
           const arrayBuffer = await file.arrayBuffer();
           const base64Data = Buffer.from(arrayBuffer).toString('base64');
           
-          const { id: driveId, webViewLink } = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
+          let fileId: string;
+          let fileUrl: string;
+          let trelloId: string | undefined;
+          let driveId: string | undefined;
+
+          if (file.size < 10 * 1024 * 1024) {
+              update({ id: toastId, title: "Subiendo a Trello...", description: progressText });
+              const trelloAtt = await uploadAttachmentToCard(selectedCard.id, file.name, base64Data);
+              if (!trelloAtt) throw new Error("Error al subir a Trello");
+              fileId = trelloAtt.id;
+              fileUrl = trelloAtt.url;
+              trelloId = trelloAtt.id;
+          } else {
+              update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: progressText });
+              const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
+              fileId = driveResult.id;
+              fileUrl = driveResult.webViewLink;
+              driveId = driveResult.id;
+              
+              update({ id: toastId, title: "Vinculando Drive con Trello...", description: progressText });
+              const trelloAtt = await attachUrlToCard(selectedCard.id, file.name, driveResult.webViewLink);
+              if (trelloAtt) trelloId = trelloAtt.id;
+          }
           
           associatedFiles.push({
-            id: driveId,
+            id: fileId,
             name: file.name,
             size: `${(file.size / 1024).toFixed(2)} KB`,
             type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
-            url: webViewLink,
-            driveId: driveId
+            url: fileUrl,
+            driveId: driveId,
+            trelloId: trelloId
           });
 
           setUploadProgress(((index + 1) / totalFiles) * 100);
         }
       }
       
-      const savingText = "Guardando información...";
-      setUploadText(savingText);
-      update({ id: toastId, title: savingText, description: "Creando el hito en la base de datos." });
-
-      // Apply automatic time logic
       const now = new Date();
       const finalDate = new Date(occurredAt);
       if (isSameDay(finalDate, now)) {
@@ -368,7 +332,7 @@ export default function Home() {
           tags: ['manual'],
           associatedFiles: associatedFiles,
           isImportant: false,
-          history: [`${format(new Date(), "PPpp", { locale: es })} - Creación de hito.`],
+          history: [`${format(new Date(), "PPpp", { locale: es })} - Creación de hito con ${associatedFiles.length} archivo(s).`],
       };
 
       const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
@@ -376,17 +340,12 @@ export default function Home() {
       
       setIsUploadOpen(false);
       dismiss(toastId);
-      toast({ title: "Hito creado con éxito", description: "El nuevo hito y sus archivos se han guardado." });
+      toast({ title: "Hito creado", description: "El hito y los archivos se han sincronizado correctamente." });
       
     } catch (error: any) {
-        console.error("Error during upload process:", error);
+        console.error("Upload error:", error);
         dismiss(toastId);
-        toast({
-            variant: "destructive",
-            title: "Error al crear el hito",
-            description: error.message || "No se pudo completar la operación.",
-            duration: 10000,
-        });
+        toast({ variant: "destructive", title: "Error en la carga", description: error.message });
     } finally {
         setIsUploading(false);
         setUploadProgress(0);
@@ -406,9 +365,8 @@ export default function Home() {
     
     try {
       await setDoc(milestoneRef, updatedMilestone, { merge: true });
-      toast({ title: "Hito actualizado", description: "Los cambios se guardaron correctamente." });
+      toast({ title: "Hito actualizado" });
     } catch (serverError: any) {
-        console.error("Error updating milestone:", serverError);
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: milestoneRef.path,
             operation: 'update',
@@ -433,10 +391,9 @@ export default function Home() {
     
     try {
       await deleteDoc(milestoneRef);
-      toast({ title: "Hito eliminado", description: "El hito ha sido borrado correctamente." });
+      toast({ title: "Hito eliminado" });
       setSelectedMilestone(null);
     } catch (serverError: any) {
-        console.error("Error deleting milestone:", serverError);
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: milestoneRef.path,
             operation: 'delete'
@@ -508,8 +465,6 @@ export default function Home() {
   
   const handleCategoryDelete = React.useCallback(async (categoryId: string) => {
     if (!firestore) return;
-    // We could check if in use here too, but firestore rules or backend logic can handle this.
-    // For now, simple delete.
     const catRef = doc(firestore, 'categories', categoryId);
     deleteDoc(catRef);
   }, [firestore]);
@@ -561,6 +516,33 @@ export default function Home() {
         desc: 'Proyecto de ejemplo maestro con hitos de referencia para capacitación.'
     });
   };
+
+  const displayedMilestones = React.useMemo(() => {
+    if (selectedCard?.id === 'training-rsa999') {
+        return RSA060_MILESTONES.map(m => {
+            const currentCat = categories.find(c => c.id === m.category.id);
+            return currentCat ? { ...m, category: currentCat } : m;
+        });
+    }
+    return milestones || [];
+  }, [selectedCard, milestones, categories]);
+
+  React.useEffect(() => {
+    if (displayedMilestones.length > 0) {
+      const allDates = displayedMilestones.map(m => parseISO(m.occurredAt));
+      const oldest = new Date(Math.min(...allDates.map(d => d.getTime())));
+      const newest = new Date(Math.max(...allDates.map(d => d.getTime())));
+      const newBounds = { start: oldest.toISOString(), end: newest.toISOString() };
+      const hasBoundsChanged = newBounds.start !== milestoneDateBounds.current?.start || newBounds.end !== milestoneDateBounds.current?.end;
+      if (hasBoundsChanged) {
+        milestoneDateBounds.current = newBounds;
+        setDateRange({ start: subMonths(oldest, 1), end: addMonths(newest, 1) });
+      }
+    } else {
+        milestoneDateBounds.current = null;
+        setDateRange(null);
+    }
+  }, [displayedMilestones]);
 
   return (
     <div className="flex h-screen w-full bg-background">
