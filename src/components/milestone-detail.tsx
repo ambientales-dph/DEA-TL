@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -182,8 +181,8 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
 
         let fileId: string;
         let fileUrl: string;
-        let trelloId: string | undefined;
-        let driveId: string | undefined;
+        let trelloId: string | null = null;
+        let driveId: string | null = null;
 
         if (file.size < 10 * 1024 * 1024 && cardId) {
             update({ id: toastId, title: "Subiendo a Trello...", description: file.name });
@@ -206,15 +205,18 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
             }
         }
 
-        newAssociatedFiles.push({
+        const fileObj: AssociatedFile = {
           id: fileId,
           name: file.name,
           size: `${(file.size / 1024).toFixed(2)} KB`,
           type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
           url: fileUrl,
-          driveId: driveId,
-          trelloId: trelloId
-        });
+        };
+
+        if (trelloId) fileObj.trelloId = trelloId;
+        if (driveId) fileObj.driveId = driveId;
+
+        newAssociatedFiles.push(fileObj);
       }
 
       if (newAssociatedFiles.length > 0) {

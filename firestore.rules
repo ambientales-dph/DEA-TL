@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Permitir acceso total para prototipado rápido.
-    // El agente ha solicitado un redespliegue para asegurar la consistencia.
+    // Redespliegue forzado para asegurar la eliminación de errores de permisos.
     match /{document=**} {
       allow read, write: if true;
     }

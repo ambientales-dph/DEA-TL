@@ -176,11 +176,9 @@ export default function Home() {
             const existingHitosByTrelloId = new Map();
             existingDocsSnapshot.docs.forEach(d => {
                 const data = d.data() as Milestone;
-                // Importante: revisamos archivos adjuntos para mapear trelloId
                 data.associatedFiles.forEach(f => {
                     if (f.trelloId) existingHitosByTrelloId.set(f.trelloId, d.id);
                 });
-                // También revisamos si el ID del documento mismo es un hito de Trello
                 if (d.id.startsWith('hito-')) {
                    existingHitosByTrelloId.set(d.id.replace('hito-', ''), d.id);
                 }
@@ -205,7 +203,14 @@ export default function Home() {
               .filter(att => !existingHitosByTrelloId.has(att.id))
               .map(att => {
                 const fileType: AssociatedFile['type'] = att.mimeType.startsWith('image/') ? 'image' : att.mimeType.startsWith('video/') ? 'video' : att.mimeType.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => att.mimeType.includes(t)) ? 'document' : 'other';
-                const associatedFile: AssociatedFile = { id: att.id, trelloId: att.id, name: att.fileName, size: `${(att.bytes / 1024).toFixed(2)} KB`, type: fileType, url: att.url };
+                const associatedFile: AssociatedFile = { 
+                    id: att.id, 
+                    trelloId: att.id, 
+                    name: att.fileName, 
+                    size: `${(att.bytes / 1024).toFixed(2)} KB`, 
+                    type: fileType, 
+                    url: att.url 
+                };
                 return {
                     id: `hito-${att.id}`,
                     name: att.fileName,
@@ -302,8 +307,8 @@ export default function Home() {
           
           let fileId: string;
           let fileUrl: string;
-          let trelloId: string | undefined;
-          let driveId: string | undefined;
+          let trelloId: string | null = null;
+          let driveId: string | null = null;
 
           if (file.size < 10 * 1024 * 1024) {
               update({ id: toastId, title: "Subiendo a Trello...", description: progressText });
@@ -324,16 +329,18 @@ export default function Home() {
               if (trelloAtt) trelloId = trelloAtt.id;
           }
           
-          associatedFiles.push({
+          const fileObj: AssociatedFile = {
             id: fileId,
             name: file.name,
             size: `${(file.size / 1024).toFixed(2)} KB`,
             type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
             url: fileUrl,
-            driveId: driveId,
-            trelloId: trelloId
-          });
+          };
 
+          if (trelloId) fileObj.trelloId = trelloId;
+          if (driveId) fileObj.driveId = driveId;
+
+          associatedFiles.push(fileObj);
           setUploadProgress(((index + 1) / totalFiles) * 100);
         }
       }
@@ -392,11 +399,9 @@ export default function Home() {
 
     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', updatedMilestone.id);
     
-    // Usar mutación no bloqueante
     setDoc(milestoneRef, updatedMilestone, { merge: true })
         .then(() => {
             toast({ title: "Hito actualizado" });
-            // Actualizar localmente si es el seleccionado
             if (selectedMilestone && selectedMilestone.id === updatedMilestone.id) {
                 setSelectedMilestone(updatedMilestone);
             }
