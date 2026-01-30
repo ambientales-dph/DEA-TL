@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -12,7 +13,7 @@ import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format,
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus } from 'lucide-react';
-import { getCardAttachments, type TrelloCardBasic, getCardActions, uploadAttachmentToCard, attachUrlToCard, deleteAttachmentFromCard, deleteAction } from '@/services/trello';
+import { getCardAttachments, type TrelloCardBasic, getCardActions, uploadAttachmentToCard, attachUrlToCard, deleteAttachmentFromCard, deleteAction, getCardById } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
@@ -26,6 +27,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { uploadFileToDrive } from '@/services/google-drive';
 import { Buffer } from 'buffer';
+import { useSearchParams } from 'next/navigation';
 import {
     Tooltip,
     TooltipContent,
@@ -39,7 +41,7 @@ function getTrelloObjectCreationDate(trelloId: string): Date {
     return new Date(timestampSeconds * 1000);
 }
 
-export default function Home() {
+function HomeContent() {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [dateRange, setDateRange] = React.useState<{ start: Date; end: Date } | null>(null);
   const [selectedMilestone, setSelectedMilestone] = React.useState<Milestone | null>(null);
@@ -53,6 +55,8 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadText, setUploadText] = React.useState('');
 
+  const searchParams = useSearchParams();
+  const cardIdParam = searchParams.get('cardId');
   const firestore = useFirestore();
   const syncPerformedForCard = React.useRef<string | null>(null);
   const { toast } = useToast();
@@ -70,6 +74,24 @@ export default function Home() {
     }
     return CATEGORIES;
   }, [firestoreCategories]);
+
+  // Manejar cardId desde la URL
+  React.useEffect(() => {
+    if (cardIdParam && (!selectedCard || selectedCard.id !== cardIdParam)) {
+        const fetchCard = async () => {
+            try {
+                const card = await getCardById(cardIdParam);
+                if (card) {
+                    setSelectedCard(card);
+                    setCardFromUrl(card);
+                }
+            } catch (error) {
+                console.error("Error fetching card from URL param:", error);
+            }
+        };
+        fetchCard();
+    }
+  }, [cardIdParam]);
 
   React.useEffect(() => {
     if (firestore && firestoreCategories && firestoreCategories.length === 0) {
@@ -183,7 +205,6 @@ export default function Home() {
                 const data = d.data() as Milestone;
                 let milestoneChanged = false;
 
-                // Sincronización PROFUNDA de archivos
                 const validFiles = data.associatedFiles.filter(f => {
                     if (f.trelloId && !currentTrelloAttachmentIds.has(f.trelloId)) {
                         milestoneChanged = true;
@@ -268,9 +289,7 @@ export default function Home() {
               .map(d => d.id)
               .filter(id => {
                   const possibleId = id.replace('hito-', '');
-                  // No remover el hito de creación
                   if (id.includes('creacion')) return false;
-                  // Si no está ni en adjuntos ni en acciones de Trello, borrar de Firestore
                   return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(possibleId);
               });
 
@@ -468,12 +487,9 @@ export default function Home() {
     const hitoToDelete = milestones?.find(m => m.id === milestoneId);
     if (!hitoToDelete) return;
 
-    // Lógica para sincronizar eliminación con Trello
     try {
         if (milestoneId.startsWith('hito-')) {
             const trelloObjectId = milestoneId.replace('hito-', '');
-            
-            // Si el hito representa un adjunto o acción, intentar borrarlo en Trello
             if (hitoToDelete.associatedFiles.length > 0) {
                 for (const file of hitoToDelete.associatedFiles) {
                     if (file.trelloId) await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
@@ -784,5 +800,13 @@ export default function Home() {
       <FeedbackButton onClick={() => setIsFeedbackOpen(true)} />
       <FeedbackDialog isOpen={isFeedbackOpen} onOpenChange={setIsFeedbackOpen} />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <React.Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>}>
+      <HomeContent />
+    </React.Suspense>
   );
 }
