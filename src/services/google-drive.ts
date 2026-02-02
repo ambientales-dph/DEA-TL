@@ -13,7 +13,13 @@ import { Readable } from 'stream';
  * 2. Crea un "ID de cliente de OAuth 2.0" (Tipo: Aplicación web).
  * 3. Añade "https://developers.google.com/oauthplayground" a los URIs de redireccionamiento autorizados.
  * 4. Usa el OAuth Playground de Google para autorizar Drive API v3 y obtener un REFRESH TOKEN.
- * 5. Configura en tu .env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN.
+ * 
+ * PARA QUE EL TOKEN NO CADUQUE (Importante):
+ * 1. Ve a "Pantalla de consentimiento de OAuth" en Google Cloud Console.
+ * 2. Cambia el "Estado de publicación" de "En pruebas" a "EN PRODUCCIÓN".
+ * 3. Si no haces esto, el token expirará cada 7 días.
+ * 
+ * Configura en tu .env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN.
  */
 
 async function getDriveClient() {
