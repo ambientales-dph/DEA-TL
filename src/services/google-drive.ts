@@ -15,9 +15,9 @@ import { Readable } from 'stream';
  */
 
 async function getDriveClient() {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+    const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+    const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+    const refreshToken = (process.env.GOOGLE_REFRESH_TOKEN || '').trim();
 
     if (!clientId || !clientSecret || !refreshToken) {
         throw new Error('Faltan variables de entorno: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET o GOOGLE_REFRESH_TOKEN.');
@@ -33,17 +33,34 @@ async function getDriveClient() {
         refresh_token: refreshToken
     });
 
+    try {
+        // Forzamos la obtención de un access token para validar las credenciales de inmediato.
+        // Si el refresh_token es inválido, esto lanzará un error detallado.
+        await oauth2Client.getAccessToken();
+    } catch (error: any) {
+        const errorDescription = error.response?.data?.error_description || error.message;
+        console.error('ERROR DE AUTENTICACIÓN GOOGLE:', {
+            status: error.response?.status,
+            error: error.response?.data?.error,
+            description: errorDescription
+        });
+        throw new Error(`Error de autenticación Google: ${errorDescription}`);
+    }
+
     return google.drive({ version: 'v3', auth: oauth2Client });
 }
 
 async function getOrCreateProjectFolder(drive: any, folderName: string) {
-    const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+    const rootFolderId = (process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || '').trim();
     if (!rootFolderId) {
         throw new Error('ID de carpeta raíz no configurado (GOOGLE_DRIVE_ROOT_FOLDER_ID).');
     }
 
     try {
-        const query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and '${rootFolderId}' in parents and trashed = false`;
+        // Escapamos comillas simples en el nombre de la carpeta para evitar errores en la query
+        const escapedFolderName = folderName.replace(/'/g, "\\'");
+        const query = `name = '${escapedFolderName}' and mimeType = 'application/vnd.google-apps.folder' and '${rootFolderId}' in parents and trashed = false`;
+        
         const response = await drive.files.list({
             q: query,
             fields: 'files(id, name)',
@@ -130,7 +147,7 @@ export async function uploadFileToDrive(
 
     } catch (error: any) {
         // Extraemos la descripción detallada del error de Google si existe
-        const errorDetail = error.response?.data?.error_description || error.message;
+        const errorDetail = error.response?.data?.error_description || error.message || 'Error desconocido';
         
         console.error('ERROR DETALLADO DE GOOGLE DRIVE:', {
             error: error.response?.data?.error,
@@ -141,9 +158,9 @@ export async function uploadFileToDrive(
         let userFriendlyMessage = errorDetail;
         
         if (errorDetail.includes('unauthorized_client')) {
-            userFriendlyMessage = 'Error de autorización (unauthorized_client). Esto ocurre si el Refresh Token se generó con un Client ID distinto al configurado o si falta marcar "Use your own OAuth credentials" en el Playground.';
+            userFriendlyMessage = 'Error de autorización (unauthorized_client). Revisa que el Client ID sea el mismo usado en el Playground.';
         } else if (errorDetail.includes('invalid_grant')) {
-            userFriendlyMessage = 'El Refresh Token ha caducado o es inválido. Por favor, genera uno nuevo.';
+            userFriendlyMessage = 'El Refresh Token es inválido o ha sido revocado. Por favor, genera uno nuevo en el Playground.';
         }
 
         throw new Error(`Error al subir a Google Drive: ${userFriendlyMessage}`);
