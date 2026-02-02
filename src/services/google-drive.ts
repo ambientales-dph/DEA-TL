@@ -7,20 +7,32 @@ import { Readable } from 'stream';
 /**
  * Servicio para gestionar la subida de archivos a Google Drive utilizando
  * Cuentas de Servicio con Delegación de Dominio (Impersonation).
+ * 
+ * NOTA PARA EL ADMINISTRADOR:
+ * Para que esto funcione, debes ir a la Consola de Administración de Google Workspace:
+ * 1. Seguridad -> Control de APIs -> Gestionar delegación de dominio.
+ * 2. Añadir nueva y usar el "Unique ID" de tu cuenta de servicio.
+ * 3. En Scopes, añadir: https://www.googleapis.com/auth/drive.file, https://www.googleapis.com/auth/drive
  */
 
-const SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive'];
+const SCOPES = [
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive'
+];
 
-// La cuenta que personificaremos para evitar límites de cuota de la cuenta de servicio
+// La cuenta que personificaremos. Debe ser una cuenta del mismo dominio de Workspace.
 const IMPERSONATED_USER = 'ambientales.dph@gmail.com';
 
 async function getDriveClient() {
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const rawKey = process.env.GOOGLE_PRIVATE_KEY;
 
-    if (!email || !key) {
-        throw new Error('Credenciales de Google Drive no configuradas en el servidor.');
+    if (!email || !rawKey) {
+        throw new Error('Credenciales de Google Drive (email o key) no configuradas en el servidor.');
     }
+
+    // Limpiar la clave privada de posibles saltos de línea mal formateados o comillas accidentales
+    const key = rawKey.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim();
 
     const auth = new google.auth.JWT(
         email,
@@ -43,31 +55,36 @@ async function getOrCreateProjectFolder(drive: any, folderName: string) {
         throw new Error('ID de carpeta raíz de Google Drive no configurado (GOOGLE_DRIVE_ROOT_FOLDER_ID).');
     }
 
-    // Buscar carpeta existente
-    const query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and '${rootFolderId}' in parents and trashed = false`;
-    const response = await drive.files.list({
-        q: query,
-        fields: 'files(id, name)',
-        spaces: 'drive',
-    });
+    try {
+        // Buscar carpeta existente
+        const query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and '${rootFolderId}' in parents and trashed = false`;
+        const response = await drive.files.list({
+            q: query,
+            fields: 'files(id, name)',
+            spaces: 'drive',
+        });
 
-    if (response.data.files && response.data.files.length > 0) {
-        return response.data.files[0].id;
+        if (response.data.files && response.data.files.length > 0) {
+            return response.data.files[0].id;
+        }
+
+        // Crear carpeta si no existe
+        const fileMetadata = {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [rootFolderId],
+        };
+
+        const folder = await drive.files.create({
+            resource: fileMetadata,
+            fields: 'id',
+        });
+
+        return folder.data.id;
+    } catch (error: any) {
+        console.error('Error en getOrCreateProjectFolder:', error.message);
+        throw error;
     }
-
-    // Crear carpeta si no existe
-    const fileMetadata = {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [rootFolderId],
-    };
-
-    const folder = await drive.files.create({
-        resource: fileMetadata,
-        fields: 'id',
-    });
-
-    return folder.data.id;
 }
 
 export interface DriveUploadResult {
@@ -118,7 +135,7 @@ export async function uploadFileToDrive(
             throw new Error('La subida a Drive falló: No se recibió ID o enlace.');
         }
 
-        // 4. Hacer que el archivo sea accesible mediante el enlace (opcional, dependiendo de permisos del dominio)
+        // 4. Hacer que el archivo sea accesible (público para lectura con el enlace)
         await drive.permissions.create({
             fileId: file.data.id,
             requestBody: {
@@ -133,7 +150,11 @@ export async function uploadFileToDrive(
         };
 
     } catch (error: any) {
-        console.error('Error en uploadFileToDrive:', error);
+        console.error('Error crítico en uploadFileToDrive:', error.message);
+        // Si el error es unauthorized_client, es probable que falte la delegación en el Admin Console
+        if (error.message.includes('unauthorized_client')) {
+            throw new Error('Error de autorización: Asegúrate de que la delegación de dominio esté habilitada para la cuenta de servicio en el Admin Console de Google.');
+        }
         throw new Error(`Error al subir a Google Drive: ${error.message}`);
     }
 }
