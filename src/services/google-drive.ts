@@ -8,18 +8,26 @@ import { Readable } from 'stream';
  * Servicio para gestionar la subida de archivos a Google Drive usando OAuth2.
  * Esto permite usar la cuota de almacenamiento de la cuenta personal (15GB+).
  * 
- * INSTRUCCIONES PARA CONFIGURAR (Solo una vez):
- * 1. Ve a Google Cloud Console -> APIs y servicios -> Credenciales.
- * 2. Crea un "ID de cliente de OAuth 2.0" (Tipo: Aplicación web).
- * 3. Añade "https://developers.google.com/oauthplayground" a los URIs de redireccionamiento autorizados.
- * 4. Usa el OAuth Playground de Google para autorizar Drive API v3 y obtener un REFRESH TOKEN.
+ * INSTRUCCIONES PARA SOLUCIONAR "unauthorized_client":
  * 
- * PARA QUE EL TOKEN NO CADUQUE (Importante):
- * 1. Ve a "Pantalla de consentimiento de OAuth" en Google Cloud Console.
- * 2. Cambia el "Estado de publicación" de "En pruebas" a "EN PRODUCCIÓN".
- * 3. Si no haces esto, el token expirará cada 7 días.
+ * 1. CONSOLA DE GOOGLE CLOUD:
+ *    - Ve a "Credenciales".
+ *    - Edita tu ID de cliente de OAuth 2.0 (DEBE SER TIPO "APLICACIÓN WEB").
+ *    - En "URIs de redireccionamiento autorizados", añade: 
+ *      https://developers.google.com/oauthplayground
+ *    - Guarda los cambios.
  * 
- * Configura en tu .env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN.
+ * 2. OAUTH PLAYGROUND (https://developers.google.com/oauthplayground):
+ *    - Haz clic en el icono del engranaje (Settings) a la derecha.
+ *    - Marca "Use your own OAuth credentials".
+ *    - Pega tu CLIENT ID y CLIENT SECRET.
+ *    - En el Paso 1 (izq), busca "Drive API v3" y selecciona: https://www.googleapis.com/auth/drive
+ *    - Haz clic en "Authorize APIs" e inicia sesión con ambientales.dph@gmail.com.
+ *    - En el Paso 2, haz clic en "Exchange authorization code for tokens".
+ *    - COPIA EL REFRESH TOKEN resultante al archivo .env.
+ * 
+ * 3. PERMANENCIA:
+ *    - En "Pantalla de consentimiento de OAuth" de Google Cloud, pon la app en estado "PRODUCCIÓN".
  */
 
 async function getDriveClient() {
@@ -28,7 +36,7 @@ async function getDriveClient() {
     const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
     if (!clientId || !clientSecret || !refreshToken) {
-        throw new Error('Configuración de OAuth2 de Google Drive incompleta en el servidor (.env).');
+        throw new Error('Faltan variables de entorno: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET o GOOGLE_REFRESH_TOKEN.');
     }
 
     const oauth2Client = new google.auth.OAuth2(
@@ -47,7 +55,7 @@ async function getDriveClient() {
 async function getOrCreateProjectFolder(drive: any, folderName: string) {
     const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
     if (!rootFolderId) {
-        throw new Error('ID de carpeta raíz de Google Drive no configurado (GOOGLE_DRIVE_ROOT_FOLDER_ID).');
+        throw new Error('ID de carpeta raíz no configurado (GOOGLE_DRIVE_ROOT_FOLDER_ID).');
     }
 
     try {
@@ -75,7 +83,7 @@ async function getOrCreateProjectFolder(drive: any, folderName: string) {
 
         return folder.data.id;
     } catch (error: any) {
-        console.error('Error en getOrCreateProjectFolder:', error.message);
+        console.error('Error al buscar/crear carpeta en Drive:', error.message);
         throw error;
     }
 }
@@ -122,7 +130,7 @@ export async function uploadFileToDrive(
             throw new Error('La subida a Drive falló: No se recibió ID o enlace.');
         }
 
-        // Hacemos que el archivo sea visible para cualquiera con el link (opcional)
+        // Aseguramos acceso de lectura para cualquier persona con el link
         await drive.permissions.create({
             fileId: file.data.id,
             requestBody: {
@@ -137,7 +145,21 @@ export async function uploadFileToDrive(
         };
 
     } catch (error: any) {
-        console.error('Error crítico en uploadFileToDrive:', error);
-        throw new Error(`Error al subir a Google Drive: ${error.message || 'Error desconocido'}`);
+        // Log detallado en el servidor para depuración técnica
+        console.error('ERROR CRÍTICO EN DRIVE:', {
+            message: error.message,
+            response: error.response?.data,
+            code: error.code
+        });
+
+        let userFriendlyMessage = error.message || 'Error desconocido';
+        
+        if (error.message.includes('unauthorized_client')) {
+            userFriendlyMessage = 'Credenciales OAuth2 inválidas (unauthorized_client). Verifica que el Client ID y Secret en .env coincidan con el Refresh Token generado en el Playground.';
+        } else if (error.message.includes('invalid_grant')) {
+            userFriendlyMessage = 'El Refresh Token ha caducado o ha sido revocado. Genera uno nuevo en el OAuth Playground.';
+        }
+
+        throw new Error(`Error al subir a Google Drive: ${userFriendlyMessage}`);
     }
 }
