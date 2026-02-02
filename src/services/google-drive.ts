@@ -5,38 +5,37 @@ import { google } from 'googleapis';
 import { Readable } from 'stream';
 
 /**
- * Servicio para gestionar la subida de archivos a Google Drive utilizando
- * una Cuenta de Servicio de forma directa (compatible con cuentas @gmail.com).
+ * Servicio para gestionar la subida de archivos a Google Drive usando OAuth2.
+ * Esto permite usar la cuota de almacenamiento de la cuenta personal (15GB+).
  * 
- * INSTRUCCIONES PARA EL USUARIO:
- * 1. Crea una carpeta en tu Google Drive personal.
- * 2. Comparte esa carpeta con el email de tu cuenta de servicio (Editor).
- * 3. Configura el ID de esa carpeta en GOOGLE_DRIVE_ROOT_FOLDER_ID.
+ * INSTRUCCIONES PARA CONFIGURAR (Solo una vez):
+ * 1. Ve a Google Cloud Console -> APIs y servicios -> Credenciales.
+ * 2. Crea un "ID de cliente de OAuth 2.0" (Tipo: Aplicación web).
+ * 3. Añade "https://developers.google.com/oauthplayground" a los URIs de redireccionamiento autorizados.
+ * 4. Usa el OAuth Playground de Google para autorizar Drive API v3 y obtener un REFRESH TOKEN.
+ * 5. Configura en tu .env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET y GOOGLE_REFRESH_TOKEN.
  */
 
-const SCOPES = [
-    'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/drive'
-];
-
 async function getDriveClient() {
-    const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const rawKey = process.env.GOOGLE_PRIVATE_KEY;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 
-    if (!email || !rawKey) {
-        throw new Error('Credenciales de Google Drive (email o key) no configuradas en el servidor.');
+    if (!clientId || !clientSecret || !refreshToken) {
+        throw new Error('Configuración de OAuth2 de Google Drive incompleta en el servidor (.env).');
     }
 
-    const key = rawKey.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim();
-
-    const auth = new google.auth.JWT(
-        email,
-        undefined,
-        key,
-        SCOPES
+    const oauth2Client = new google.auth.OAuth2(
+        clientId,
+        clientSecret,
+        'https://developers.google.com/oauthplayground'
     );
 
-    return google.drive({ version: 'v3', auth });
+    oauth2Client.setCredentials({
+        refresh_token: refreshToken
+    });
+
+    return google.drive({ version: 'v3', auth: oauth2Client });
 }
 
 async function getOrCreateProjectFolder(drive: any, folderName: string) {
@@ -117,6 +116,7 @@ export async function uploadFileToDrive(
             throw new Error('La subida a Drive falló: No se recibió ID o enlace.');
         }
 
+        // Hacemos que el archivo sea visible para cualquiera con el link (opcional)
         await drive.permissions.create({
             fileId: file.data.id,
             requestBody: {
@@ -131,7 +131,7 @@ export async function uploadFileToDrive(
         };
 
     } catch (error: any) {
-        console.error('Error crítico en uploadFileToDrive:', error.message);
-        throw new Error(`Error al subir a Google Drive: ${error.message}`);
+        console.error('Error crítico en uploadFileToDrive:', error);
+        throw new Error(`Error al subir a Google Drive: ${error.message || 'Error desconocido'}`);
     }
 }
