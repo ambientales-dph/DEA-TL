@@ -40,7 +40,7 @@ export async function autoTagFiles(input: AutoTagFilesInput): Promise<AutoTagFil
 
 const prompt = ai.definePrompt({
   name: 'autoTagFilesPrompt',
-  model: 'googleai/gemini-pro',
+  model: 'googleai/gemini-1.5-flash',
   input: {schema: AutoTagFilesInputSchema},
   output: {schema: AutoTagFilesOutputSchema},
   prompt: `Eres un experto en etiquetar documentos técnicos y administrativos relacionados a obras de ingeniería y medio ambiente.
