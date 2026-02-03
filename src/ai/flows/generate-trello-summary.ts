@@ -6,7 +6,7 @@
  * - TrelloSummaryInput - The input type for the flow.
  */
 
-import {ai, gemini15Flash} from '@/ai/genkit';
+import {ai, geminiModel} from '@/ai/genkit';
 import {z} from 'zod';
 import {getTrelloBoardSummaryTool} from '@/ai/tools/trello-tool';
 
@@ -38,7 +38,7 @@ const trelloSummaryFlow = ai.defineFlow(
     La pregunta específica del usuario es: "${input.topic}". Asegúrate de que tu resumen responda a esta pregunta si es posible.`;
 
     const {output} = await ai.generate({
-        model: gemini15Flash,
+        model: geminiModel,
         prompt,
         tools: [getTrelloBoardSummaryTool],
     });

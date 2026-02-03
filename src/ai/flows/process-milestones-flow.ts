@@ -4,7 +4,7 @@
  * @fileOverview Flujo de Genkit para procesar tablas de hitos desde texto.
  */
 
-import { ai, gemini15Flash } from '@/ai/genkit';
+import { ai, geminiModel } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const MilestoneExtractionInputSchema = z.object({
@@ -34,7 +34,7 @@ export async function processTableMilestones(input: MilestoneExtractionInput): P
 
 const prompt = ai.definePrompt({
   name: 'processTableMilestonesPrompt',
-  model: gemini15Flash,
+  model: geminiModel,
   input: { schema: MilestoneExtractionInputSchema },
   output: { schema: MilestoneExtractionOutputSchema },
   prompt: `Eres un asistente experto en gestión de proyectos de ingeniería y medio ambiente. 

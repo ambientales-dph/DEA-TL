@@ -8,7 +8,7 @@
  * - AutoTagFilesOutput - El tipo de retorno para la función autoTagFiles.
  */
 
-import {ai, gemini15Flash} from '@/ai/genkit';
+import {ai, geminiModel} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const TaggingRequestSchema = z.object({
@@ -40,7 +40,7 @@ export async function autoTagFiles(input: AutoTagFilesInput): Promise<AutoTagFil
 
 const prompt = ai.definePrompt({
   name: 'autoTagFilesPrompt',
-  model: gemini15Flash,
+  model: geminiModel,
   input: {schema: AutoTagFilesInputSchema},
   output: {schema: AutoTagFilesOutputSchema},
   prompt: `Eres un experto en etiquetar documentos técnicos y administrativos relacionados a obras de ingeniería y medio ambiente.
