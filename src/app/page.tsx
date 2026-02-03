@@ -56,12 +56,10 @@ function HomeContent() {
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadText, setUploadText] = React.useState('');
 
-  // Sidebar specific states lifted to allow resetting
   const [selectedBoard, setSelectedBoard] = React.useState('');
   const [selectedList, setSelectedList] = React.useState('');
   const [cardSearchTerm, setCardSearchTerm] = React.useState('');
 
-  // Conflict state
   const [isConflictDialogOpen, setIsConflictDialogOpen] = React.useState(false);
   const [pendingUploadData, setPendingUploadData] = React.useState<any>(null);
   const [conflicts, setConflicts] = React.useState<any[]>([]);
@@ -88,7 +86,6 @@ function HomeContent() {
     return CATEGORIES;
   }, [firestoreCategories]);
 
-  // Manejar cardId desde la URL
   React.useEffect(() => {
     if (cardIdParam && (!selectedCard || selectedCard.id !== cardIdParam)) {
         const fetchCard = async () => {
@@ -342,7 +339,6 @@ function HomeContent() {
     const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
     const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
 
-    // Phase 1: Conflict Detection
     if (files && files.length > 0) {
         setIsUploading(true);
         setUploadText("Verificando archivos en Drive...");
@@ -360,7 +356,7 @@ function HomeContent() {
                 setConflicts(foundConflicts);
                 setPendingUploadData({ ...data, folderId });
                 setIsConflictDialogOpen(true);
-                return; // Wait for user choice
+                return;
             } else {
                 executeFinalUpload(data, folderId, {});
             }
@@ -407,7 +403,6 @@ function HomeContent() {
           let targetName = file.name;
           let existingId = strategy === 'overwrite' ? conflicts.find(c => c.name === file.name)?.existingId : undefined;
 
-          // If rename, find a unique name
           if (strategy === 'rename') {
              let counter = 1;
              let nameParts = file.name.split('.');
@@ -540,23 +535,17 @@ function HomeContent() {
     });
 
     try {
-        // Limpiar archivos en Trello y Google Drive
         for (const file of hitoToDelete.associatedFiles) {
             update({ id: toastId, description: `Eliminando ${file.name}...` });
-            
-            // Trello
             if (file.trelloId) {
                 await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
             }
-            
-            // Google Drive
             const driveId = file.driveId || (file.id && !file.trelloId ? file.id : null);
             if (driveId) {
                 await deleteFileFromDrive(driveId);
             }
         }
 
-        // Si es un hito de comentario en Trello, borrar la acción
         if (milestoneId.startsWith('hito-') && hitoToDelete.tags?.includes('comentario')) {
             const trelloObjectId = milestoneId.replace('hito-', '');
             await deleteAction(trelloObjectId);
@@ -608,10 +597,10 @@ function HomeContent() {
   const handleGoHome = React.useCallback(() => {
     setSelectedCard(null);
     setSelectedMilestone(null);
-    setSearchTerm(''); // Top search
-    setSelectedBoard(''); // Trello Board selector
-    setSelectedList(''); // Trello List selector
-    setCardSearchTerm(''); // Trello Card internal search
+    setSearchTerm('');
+    setSelectedBoard('');
+    setSelectedList('');
+    setCardSearchTerm('');
     setView('timeline');
     setCardFromUrl(null);
     syncPerformedForCard.current = null;

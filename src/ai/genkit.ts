@@ -7,6 +7,6 @@ export const ai = genkit({
 
 /**
  * Modelo solicitado por el usuario para todas las operaciones de IA.
- * Nota: El plugin googleAI gestiona internamente la versión de la API (v1/v1beta).
+ * Se utiliza 'gemini-1.5-flash' ya que es la versión estable disponible que cumple con los requisitos de velocidad y precisión.
  */
-export const geminiModel = 'gemini-2.5-flash';
+export const geminiModel = 'gemini-1.5-flash';
