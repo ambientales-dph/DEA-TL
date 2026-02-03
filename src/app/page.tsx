@@ -26,7 +26,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder, deleteFileFromDrive } from '@/services/google-drive';
 import { Buffer } from 'buffer';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import {
     Tooltip,
     TooltipContent,
@@ -67,6 +67,8 @@ function HomeContent() {
   const [conflicts, setConflicts] = React.useState<any[]>([]);
 
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const cardIdParam = searchParams.get('cardId');
   const firestore = useFirestore();
   const syncPerformedForCard = React.useRef<string | null>(null);
@@ -613,7 +615,8 @@ function HomeContent() {
     setView('timeline');
     setCardFromUrl(null);
     syncPerformedForCard.current = null;
-  }, []);
+    router.replace(pathname);
+  }, [router, pathname]);
 
   const handleCategoryColorChange = React.useCallback((categoryId: string, color: string) => {
     if (!firestore) return;
