@@ -24,7 +24,7 @@ const trelloSummaryFlow = ai.defineFlow(
     outputSchema: z.string(),
   },
   async (input) => {
-    const prompt = `Eres un asistente de gestión de proyectos experto en analizar tableros de Trello. El usuario quiere un resumen sobre el estado del tablero de Trello llamado '${input.boardName}'.
+    const promptText = `Eres un asistente de gestión de proyectos experto en analizar tableros de Trello. El usuario quiere un resumen sobre el estado del tablero de Trello llamado '${input.boardName}'.
 
     Utiliza la herramienta 'getTrelloBoardSummary' con el ID de tablero '${input.boardId}' para obtener la estructura actual del tablero, incluyendo listas y tarjetas.
     
@@ -39,7 +39,7 @@ const trelloSummaryFlow = ai.defineFlow(
 
     const {output} = await ai.generate({
         model: geminiModel,
-        prompt,
+        prompt: promptText,
         tools: [getTrelloBoardSummaryTool],
     });
 
