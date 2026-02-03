@@ -20,7 +20,6 @@ import { useToast } from '@/hooks/use-toast';
 import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder, deleteFileFromDrive } from '@/services/google-drive';
 import { attachUrlToCard, deleteAttachmentFromCard } from '@/services/trello';
 import { Buffer } from 'buffer';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
 import { FileConflictDialog, type ConflictStrategy } from './file-conflict-dialog';
@@ -47,6 +46,8 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
   const [fileToDelete, setFileToDelete] = React.useState<AssociatedFile | null>(null);
   const [fileDeleteConfirmation, setFileDeleteConfirmation] = React.useState('');
 
+  const [showCalendar, setShowCalendar] = React.useState(false);
+
   // Conflict state
   const [isConflictDialogOpen, setIsConflictDialogOpen] = React.useState(false);
   const [conflicts, setConflicts] = React.useState<any[]>([]);
@@ -66,6 +67,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
       setDeleteConfirmation('');
       setFileToDelete(null);
       setFileDeleteConfirmation('');
+      setShowCalendar(false);
     }
   }, [milestone]);
 
@@ -125,6 +127,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
           history: [...milestone.history, createLogEntry(`Fecha cambiada a ${format(finalDate, 'PPP', { locale: es })}`)],
         });
       }
+      setShowCalendar(false);
     }
   };
 
@@ -404,23 +407,23 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                         </SelectContent>
                     </Select>
                 </div>
-                 <div className="flex items-center text-xs text-zinc-700 mt-1.5">
-                    <Clock className="h-3 w-3 mr-1.5" />
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <button className="hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2 flex items-center gap-1">
-                                {format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}
-                                <CalendarIcon className="h-3 w-3" />
-                            </button>
-                        </PopoverTrigger>
-                        <PopoverContent 
-                          className="w-auto p-0 z-[130]" 
-                          align="start"
-                          onOpenAutoFocus={(e) => e.preventDefault()}
-                          onCloseAutoFocus={(e) => e.preventDefault()}
-                          onPointerDownOutside={(e) => e.preventDefault()}
-                          onInteractOutside={(e) => e.preventDefault()}
+                 <div className="flex flex-col text-xs text-zinc-700 mt-1.5 space-y-2">
+                    <div className="flex items-center">
+                        <Clock className="h-3 w-3 mr-1.5" />
+                        <button 
+                            onClick={() => setShowCalendar(!showCalendar)}
+                            className={cn(
+                                "hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2 flex items-center gap-1",
+                                showCalendar && "text-primary font-bold"
+                            )}
                         >
+                            {format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}
+                            <CalendarIcon className="h-3 w-3 ml-1" />
+                        </button>
+                    </div>
+
+                    {showCalendar && (
+                        <div className="p-2 bg-white rounded-lg shadow-lg border border-zinc-300 animate-in fade-in zoom-in-95 duration-200 z-50">
                             <Calendar
                                 mode="single"
                                 selected={parseISO(milestone.occurredAt)}
@@ -433,8 +436,8 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                                 toYear={new Date().getFullYear()}
                                 locale={es}
                             />
-                        </PopoverContent>
-                    </Popover>
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
