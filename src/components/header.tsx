@@ -17,7 +17,7 @@ interface HeaderProps {
   onGoHome: () => void;
   trelloCardUrl: string | null;
   isProjectLoaded: boolean;
-  onToggleTrelloSummary: () => void;
+  onOpenAIAssistant: () => void;
   onSelectTrainingProject: () => void;
 }
 
@@ -30,7 +30,7 @@ export function Header({
   onGoHome, 
   trelloCardUrl, 
   isProjectLoaded, 
-  onToggleTrelloSummary,
+  onOpenAIAssistant,
   onSelectTrainingProject
 }: HeaderProps) {
   
@@ -73,12 +73,12 @@ export function Header({
                 </Tooltip>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Button size="icon" variant="outline" onClick={onToggleTrelloSummary} disabled>
+                        <Button size="icon" variant="outline" onClick={onOpenAIAssistant} disabled={!isProjectLoaded}>
                             <Bot className="h-4 w-4" />
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                        <p>Resumen de Trello con IA (desactivado)</p>
+                        <p>Asistente de IA (Importar tabla)</p>
                     </TooltipContent>
                 </Tooltip>
                 <Tooltip>
