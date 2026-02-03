@@ -19,7 +19,7 @@ function Calendar({
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
-      className={cn("p-3 bg-white rounded-md border border-zinc-300 shadow-lg", className)}
+      className={cn("p-3 bg-white rounded-md border border-zinc-300 shadow-xl", className)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
@@ -52,9 +52,9 @@ function Calendar({
         day_range_middle:
           "aria-selected:bg-zinc-100 aria-selected:text-zinc-900",
         day_hidden: "invisible",
-        // Estilos específicos para los dropdowns de mes/año en v9
+        // Estilos específicos para los dropdowns de mes/año en v9 (DayPicker)
         dropdowns: "flex justify-center gap-1 mb-2",
-        dropdown: "p-1 text-xs border border-zinc-300 rounded bg-zinc-50 text-zinc-900 focus:ring-1 focus:ring-primary outline-none cursor-pointer",
+        dropdown: "p-1 text-xs border border-zinc-300 rounded bg-white text-zinc-900 focus:ring-1 focus:ring-primary outline-none cursor-pointer z-[200]",
         dropdown_month: "font-medium",
         dropdown_year: "font-medium",
         ...classNames,

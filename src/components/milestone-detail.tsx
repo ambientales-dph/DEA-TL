@@ -8,7 +8,7 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock, ExternalLink, Trash2 } from 'lucide-react';
+import { Paperclip, Tag, X, Star, Pencil, History, UploadCloud, Clock, ExternalLink, Trash2, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -408,11 +408,16 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                     <Clock className="h-3 w-3 mr-1.5" />
                     <Popover>
                         <PopoverTrigger asChild>
-                            <button className="hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2">
+                            <button className="hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2 flex items-center gap-1">
                                 {format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}
+                                <CalendarIcon className="h-3 w-3" />
                             </button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+                        <PopoverContent 
+                          className="w-auto p-0 z-[120]" 
+                          align="start"
+                          onInteractOutside={(e) => e.preventDefault()}
+                        >
                             <Calendar
                                 mode="single"
                                 selected={parseISO(milestone.occurredAt)}
@@ -423,6 +428,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                                 captionLayout="dropdown"
                                 fromYear={1900}
                                 toYear={new Date().getFullYear()}
+                                locale={es}
                             />
                         </PopoverContent>
                     </Popover>
