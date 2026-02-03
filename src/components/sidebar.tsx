@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -42,6 +43,12 @@ interface SidebarProps {
   selectedCard: TrelloCardBasic | null;
   onGoHome: () => void;
   cardFromUrl?: TrelloCardBasic | null;
+  selectedBoard: string;
+  onBoardSelect: (id: string) => void;
+  selectedList: string;
+  onListSelect: (id: string) => void;
+  cardSearchTerm: string;
+  onCardSearchChange: (term: string) => void;
 }
 
 const normalizeText = (text: string | null | undefined): string => {
@@ -62,6 +69,12 @@ export function Sidebar({
     selectedCard, 
     onGoHome,
     cardFromUrl,
+    selectedBoard,
+    onBoardSelect,
+    selectedList,
+    onListSelect,
+    cardSearchTerm,
+    onCardSearchChange,
 }: SidebarProps) {
   const [openPopoverId, setOpenPopoverId] = React.useState<string | null>(null);
   const [isAdding, setIsAdding] = React.useState(false);
@@ -76,10 +89,6 @@ export function Sidebar({
   const [lists, setLists] = React.useState<TrelloListBasic[]>([]);
   const [cards, setCards] = React.useState<TrelloCardBasic[]>([]);
   const [filteredCards, setFilteredCards] = React.useState<TrelloCardBasic[]>([]);
-  
-  const [selectedBoard, setSelectedBoard] = React.useState('');
-  const [selectedList, setSelectedList] = React.useState('');
-  const [cardSearchTerm, setCardSearchTerm] = React.useState('');
   
   const [isTrelloAvailable, setIsTrelloAvailable] = React.useState<boolean | null>(null);
   const [isLoadingBoards, setIsLoadingBoards] = React.useState(false);
@@ -109,15 +118,15 @@ export function Sidebar({
   React.useEffect(() => {
     if (cardFromUrl) {
       const card = cardFromUrl as TrelloCardBasic & { idBoard: string; idList: string };
-      setSelectedBoard(card.idBoard);
-      setCardSearchTerm(card.name);
+      onBoardSelect(card.idBoard);
+      onCardSearchChange(card.name);
     }
-  }, [cardFromUrl]);
+  }, [cardFromUrl, onBoardSelect, onCardSearchChange]);
 
   React.useEffect(() => {
     if (!selectedBoard) {
       setLists([]);
-      setSelectedList('');
+      onListSelect('');
       return;
     }
 
@@ -128,7 +137,7 @@ export function Sidebar({
         const boardLists = await getBoardLists(selectedBoard);
         setLists(boardLists);
         if (cardFromUrl && (cardFromUrl as any).idBoard === selectedBoard) {
-            setSelectedList((cardFromUrl as any).idList);
+            onListSelect((cardFromUrl as any).idList);
         }
       } catch (error) {
         console.error(`Failed to fetch lists for board ${selectedBoard}`, error);
@@ -137,7 +146,7 @@ export function Sidebar({
       }
     };
     fetchLists();
-  }, [selectedBoard]);
+  }, [selectedBoard, cardFromUrl, onListSelect]);
 
   React.useEffect(() => {
     if (!selectedList) {
@@ -164,7 +173,7 @@ export function Sidebar({
         }
     };
     fetchCards();
-  }, [selectedList]);
+  }, [selectedList, cardFromUrl, onCardSelect]);
   
   React.useEffect(() => {
     if (!cardSearchTerm) {
@@ -248,14 +257,14 @@ export function Sidebar({
         if (results.length === 1) {
             const card = results[0] as TrelloCardBasic & { idBoard: string, idList: string };
             
-            setSelectedBoard(card.idBoard);
+            onBoardSelect(card.idBoard);
 
             setIsLoadingLists(true);
             const boardLists = await getBoardLists(card.idBoard);
             setLists(boardLists);
             setIsLoadingLists(false);
             
-            setSelectedList(card.idList);
+            onListSelect(card.idList);
 
             setIsLoadingCards(true);
             const listCards = await getCardsInList(card.idList);
@@ -265,8 +274,8 @@ export function Sidebar({
 
             onCardSelect(card);
         } else {
-            setSelectedBoard('');
-            setSelectedList('');
+            onBoardSelect('');
+            onListSelect('');
             setCards(results);
             setFilteredCards(results);
         }
@@ -278,7 +287,7 @@ export function Sidebar({
 };
 
 const handleClearSearch = () => {
-  setCardSearchTerm('');
+  onCardSearchChange('');
 };
 
 const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Resultados (${filteredCards.length})` : `Tarjetas (${filteredCards.length})`;
@@ -306,7 +315,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                 </Card>
             ) : (
                 <>
-                    <Select onValueChange={setSelectedBoard} value={selectedBoard} disabled={isLoadingBoards || isTrelloAvailable === null}>
+                    <Select onValueChange={onBoardSelect} value={selectedBoard} disabled={isLoadingBoards || isTrelloAvailable === null}>
                     <SelectTrigger className="w-full h-8 text-xs">
                         <SelectValue placeholder={
                             isTrelloAvailable === null ? "Verificando Trello..." :
@@ -321,7 +330,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                     </Select>
 
                     <Select 
-                      onValueChange={(value) => { setSelectedList(value); onCardSelect(null); }} 
+                      onValueChange={(value) => { onListSelect(value); onCardSelect(null); }} 
                       value={selectedList} 
                       disabled={!selectedBoard || isLoadingLists}
                     >
@@ -341,7 +350,7 @@ const cardListTitle = (!selectedBoard && !selectedList && cardSearchTerm) ? `Res
                             placeholder="Buscar tarjeta y presionar Enter..."
                             className="pl-9 pr-9 h-8 text-xs"
                             value={cardSearchTerm}
-                            onChange={(e) => setCardSearchTerm(e.target.value)}
+                            onChange={(e) => onCardSearchChange(e.target.value)}
                             onKeyDown={handleGlobalSearch}
                             disabled={isTrelloAvailable === null}
                         />

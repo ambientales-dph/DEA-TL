@@ -56,6 +56,11 @@ function HomeContent() {
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadText, setUploadText] = React.useState('');
 
+  // Sidebar specific states lifted to allow resetting
+  const [selectedBoard, setSelectedBoard] = React.useState('');
+  const [selectedList, setSelectedList] = React.useState('');
+  const [cardSearchTerm, setCardSearchTerm] = React.useState('');
+
   // Conflict state
   const [isConflictDialogOpen, setIsConflictDialogOpen] = React.useState(false);
   const [pendingUploadData, setPendingUploadData] = React.useState<any>(null);
@@ -601,7 +606,10 @@ function HomeContent() {
   const handleGoHome = React.useCallback(() => {
     setSelectedCard(null);
     setSelectedMilestone(null);
-    setSearchTerm('');
+    setSearchTerm(''); // Top search
+    setSelectedBoard(''); // Trello Board selector
+    setSelectedList(''); // Trello List selector
+    setCardSearchTerm(''); // Trello Card internal search
     setView('timeline');
     setCardFromUrl(null);
     syncPerformedForCard.current = null;
@@ -739,6 +747,12 @@ function HomeContent() {
         selectedCard={selectedCard}
         onGoHome={handleGoHome}
         cardFromUrl={cardFromUrl}
+        selectedBoard={selectedBoard}
+        onBoardSelect={setSelectedBoard}
+        selectedList={selectedList}
+        onListSelect={setSelectedList}
+        cardSearchTerm={cardSearchTerm}
+        onCardSearchChange={setCardSearchTerm}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header 
