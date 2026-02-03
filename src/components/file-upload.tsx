@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -27,8 +26,8 @@ import { es } from 'date-fns/locale';
 import { Progress } from './ui/progress';
 
 const uploadSchema = z.object({
-  name: z.string().min(5, { message: 'El título del hito debe tener al menos 5 caracteres.' }),
-  description: z.string().min(10, { message: 'La descripción debe tener al menos 10 caracteres.' }),
+  name: z.string().min(1, { message: 'El título del hito no puede estar vacío.' }),
+  description: z.string().optional().or(z.string().min(0)),
   occurredAt: z.date({
     required_error: "Se requiere una fecha para el hito.",
   }),
@@ -79,7 +78,10 @@ export function FileUpload({
   }, [form, isOpen]);
 
   const onSubmit = (data: UploadFormValues) => {
-    onUpload(data);
+    onUpload({
+        ...data,
+        description: data.description || ''
+    });
   };
   
   const selectedFiles = form.watch('files') || [];
@@ -134,7 +136,7 @@ export function FileUpload({
                             <FormItem className="space-y-1">
                             <FormLabel className="text-xs font-semibold">Título del hito</FormLabel>
                             <FormControl>
-                                <Input placeholder="Ej: Presentación de Avance" {...field} className="h-8 text-sm bg-zinc-100 text-black border-zinc-400 placeholder:text-zinc-500" />
+                                <Input placeholder="Ej: Presentación" {...field} className="h-8 text-sm bg-zinc-100 text-black border-zinc-400 placeholder:text-zinc-500" />
                             </FormControl>
                             <FormMessage className="text-[10px]" />
                             </FormItem>
@@ -148,7 +150,7 @@ export function FileUpload({
                             <FormLabel className="text-xs font-semibold">Descripción</FormLabel>
                             <FormControl>
                                 <Textarea
-                                placeholder="Contexto del hito..."
+                                placeholder="Contexto..."
                                 className="min-h-[60px] text-sm resize-none bg-zinc-100 text-black border-zinc-400 placeholder:text-zinc-500"
                                 rows={2}
                                 {...field}
