@@ -17,7 +17,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './
 import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder } from '@/services/google-drive';
+import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder, deleteFileFromDrive } from '@/services/google-drive';
 import { uploadAttachmentToCard, attachUrlToCard, getCardAttachments, deleteAttachmentFromCard } from '@/services/trello';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
@@ -322,11 +322,21 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
     });
 
     try {
+        // 1. Eliminar de Trello si existe el ID vinculado
         if (cardId && fileToRem.trelloId) {
             update({ id: toastId, description: `Eliminando de Trello: ${fileToRem.name}` });
             await deleteAttachmentFromCard(cardId, fileToRem.trelloId);
         }
 
+        // 2. Eliminar de Google Drive si existe el ID de Drive
+        // Usamos fileToRem.driveId o fileToRem.id ya que en las subidas manuales son el mismo
+        const driveId = fileToRem.driveId || fileToRem.id;
+        if (driveId) {
+            update({ id: toastId, description: `Eliminando de Google Drive: ${fileToRem.name}` });
+            await deleteFileFromDrive(driveId);
+        }
+
+        // 3. Actualizar Firestore
         const updatedFiles = milestone.associatedFiles.filter(f => f.id !== fileToRem.id);
         onMilestoneUpdate({
             ...milestone,
@@ -335,7 +345,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
         });
 
         dismiss(toastId);
-        toast({ title: "Archivo eliminado", description: `"${fileToRem.name}" fue removido correctamente.` });
+        toast({ title: "Archivo eliminado", description: `"${fileToRem.name}" fue removido de Drive y Trello.` });
     } catch (error: any) {
         console.error("Error deleting file:", error);
         dismiss(toastId);

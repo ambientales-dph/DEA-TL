@@ -5,8 +5,8 @@ import { google } from 'googleapis';
 import { Readable } from 'stream';
 
 /**
- * Servicio para gestionar la subida de archivos a Google Drive usando OAuth2.
- * Implementa soporte para actualización de archivos y detección de duplicados.
+ * Servicio para gestionar la subida y eliminación de archivos a Google Drive usando OAuth2.
+ * Actúa en nombre de la cuenta personal configurada.
  */
 
 async function getDriveClient() {
@@ -18,15 +18,16 @@ async function getDriveClient() {
         throw new Error('Faltan variables de entorno: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET o GOOGLE_REFRESH_TOKEN.');
     }
 
+    // Usamos el cliente OAuth2 con el Refresh Token de la cuenta personal
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
     oauth2Client.setCredentials({ refresh_token: refreshToken });
 
     try {
+        // Forzamos el refresco del token para validar credenciales inmediatamente
         await oauth2Client.getAccessToken();
     } catch (error: any) {
-        const errorDescription = error.response?.data?.error_description || error.message;
-        console.error('ERROR DE AUTENTICACIÓN GOOGLE:', errorDescription);
-        throw new Error(`Error de autenticación Google: ${errorDescription}`);
+        console.error('ERROR CRÍTICO DE AUTENTICACIÓN GOOGLE:', error.response?.data || error.message);
+        throw new Error(`Error de autenticación Google: ${error.response?.data?.error_description || error.message}. Verifica que el Refresh Token sea válido para este Client ID.`);
     }
 
     return google.drive({ version: 'v3', auth: oauth2Client });
@@ -62,7 +63,7 @@ export async function getOrCreateProjectFolder(projectCode: string | null) {
         };
 
         const folder = await drive.files.create({
-            resource: fileMetadata,
+            resource: fileMetadata as any,
             fields: 'id',
         });
 
@@ -90,6 +91,22 @@ export async function findFileInFolder(folderId: string, fileName: string) {
     } catch (error) {
         console.error('Error al buscar archivo:', error);
         return null;
+    }
+}
+
+/**
+ * Elimina un archivo de Google Drive.
+ */
+export async function deleteFileFromDrive(fileId: string): Promise<boolean> {
+    try {
+        const drive = await getDriveClient();
+        await drive.files.delete({
+            fileId: fileId,
+        });
+        return true;
+    } catch (error: any) {
+        console.error('Error al eliminar archivo de Drive:', error.message);
+        return false;
     }
 }
 
@@ -125,7 +142,7 @@ export async function uploadFileToDrive(
                 fileId: existingFileId,
                 media: media,
                 fields: 'id, webViewLink, name',
-            });
+            } as any);
         } else {
             // Crear nuevo archivo
             const fileMetadata = {
@@ -136,14 +153,14 @@ export async function uploadFileToDrive(
                 requestBody: fileMetadata,
                 media: media,
                 fields: 'id, webViewLink, name',
-            });
+            } as any);
         }
 
         if (!file.data.id || !file.data.webViewLink) {
             throw new Error('La subida a Drive falló.');
         }
 
-        // Aseguramos acceso de lectura
+        // Aseguramos acceso de lectura pública (opcional, según necesidad)
         await drive.permissions.create({
             fileId: file.data.id,
             requestBody: { role: 'reader', type: 'anyone' },
@@ -156,7 +173,7 @@ export async function uploadFileToDrive(
         };
 
     } catch (error: any) {
-        const errorDetail = error.response?.data?.error_description || error.message || 'Error desconocido';
-        throw new Error(`Error en Drive: ${errorDetail}`);
+        console.error('Error crítico en uploadFileToDrive:', error);
+        throw new Error(`Error al subir a Google Drive: ${error.message || 'Error desconocido'}`);
     }
 }
