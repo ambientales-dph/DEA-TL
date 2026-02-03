@@ -34,6 +34,7 @@ export async function processTableMilestones(input: MilestoneExtractionInput): P
 
 const prompt = ai.definePrompt({
   name: 'processTableMilestonesPrompt',
+  model: 'googleai/gemini-1.5-flash',
   input: { schema: MilestoneExtractionInputSchema },
   output: { schema: MilestoneExtractionOutputSchema },
   prompt: `Eres un asistente experto en gestión de proyectos de ingeniería y medio ambiente. 
