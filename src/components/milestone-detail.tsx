@@ -406,7 +406,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                 </div>
                  <div className="flex items-center text-xs text-zinc-700 mt-1.5">
                     <Clock className="h-3 w-3 mr-1.5" />
-                    <Popover>
+                    <Popover modal={false}>
                         <PopoverTrigger asChild>
                             <button className="hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2 flex items-center gap-1">
                                 {format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}

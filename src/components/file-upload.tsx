@@ -157,7 +157,7 @@ export function FileUpload({
                     render={({ field }) => (
                         <FormItem className="flex flex-col space-y-1">
                         <FormLabel className="text-xs">Fecha</FormLabel>
-                        <Popover>
+                        <Popover modal={false}>
                             <PopoverTrigger asChild>
                             <FormControl>
                                 <Button

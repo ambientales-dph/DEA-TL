@@ -19,42 +19,40 @@ function Calendar({
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
-      className={cn("p-3 bg-white rounded-md border border-zinc-300 shadow-xl", className)}
+      className={cn("p-3 bg-white rounded-md border border-zinc-300 shadow-2xl", className)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
-        caption: "flex justify-center pt-1 relative items-center gap-1",
-        caption_label: "text-sm font-semibold text-zinc-900",
+        month_caption: "flex justify-center pt-1 relative items-center gap-1",
+        caption_label: "text-sm font-bold text-zinc-900",
         nav: "space-x-1 flex items-center",
-        nav_button: cn(
+        button_previous: cn(
           buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 border-zinc-400 text-zinc-900"
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 border-zinc-400 text-zinc-900 absolute left-1"
         ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
-        table: "w-full border-collapse space-y-1",
-        head_row: "flex",
-        head_cell:
-          "text-zinc-500 rounded-md w-9 font-normal text-[0.8rem]",
-        row: "flex w-full mt-2",
-        cell: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-zinc-100/50 [&:has([aria-selected])]:bg-zinc-100 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+        button_next: cn(
+          buttonVariants({ variant: "outline" }),
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 border-zinc-400 text-zinc-900 absolute right-1"
+        ),
+        month_grid: "w-full border-collapse space-y-1",
+        weekdays: "flex",
+        weekday: "text-zinc-500 rounded-md w-9 font-normal text-[0.8rem]",
+        week: "flex w-full mt-2",
         day: cn(
           buttonVariants({ variant: "ghost" }),
           "h-9 w-9 p-0 font-normal aria-selected:opacity-100 text-zinc-900 hover:bg-zinc-200 hover:text-zinc-900"
         ),
-        day_range_end: "day-range-end",
-        day_selected:
+        selected:
           "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-zinc-200 text-zinc-900 font-bold",
-        day_outside:
+        today: "bg-zinc-200 text-zinc-900 font-bold",
+        outside:
           "day-outside text-zinc-400 aria-selected:bg-zinc-100/50 aria-selected:text-zinc-400",
-        day_disabled: "text-zinc-300 opacity-50",
-        day_range_middle:
-          "aria-selected:bg-zinc-100 aria-selected:text-zinc-900",
-        day_hidden: "invisible",
-        // Estilos específicos para los dropdowns de mes/año en v9 (DayPicker)
+        disabled: "text-zinc-300 opacity-50",
+        range_middle: "aria-selected:bg-zinc-100 aria-selected:text-zinc-900",
+        hidden: "invisible",
+        // Clases para selectores de mes/año v9
         dropdowns: "flex justify-center gap-1 mb-2",
-        dropdown: "p-1 text-xs border border-zinc-300 rounded bg-white text-zinc-900 focus:ring-1 focus:ring-primary outline-none cursor-pointer z-[200]",
+        dropdown: "p-1 text-xs border border-zinc-300 rounded bg-white text-zinc-900 focus:ring-1 focus:ring-primary outline-none cursor-pointer",
         dropdown_month: "font-medium",
         dropdown_year: "font-medium",
         ...classNames,
