@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -16,12 +17,13 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './
 import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { uploadFileToDrive } from '@/services/google-drive';
+import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder } from '@/services/google-drive';
 import { uploadAttachmentToCard, attachUrlToCard, getCardAttachments, deleteAttachmentFromCard } from '@/services/trello';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
+import { FileConflictDialog, type ConflictStrategy } from './file-conflict-dialog';
 
 interface MilestoneDetailProps {
   milestone: Milestone;
@@ -44,6 +46,11 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
   
   const [fileToDelete, setFileToDelete] = React.useState<AssociatedFile | null>(null);
   const [fileDeleteConfirmation, setFileDeleteConfirmation] = React.useState('');
+
+  // Conflict state
+  const [isConflictDialogOpen, setIsConflictDialogOpen] = React.useState(false);
+  const [conflicts, setConflicts] = React.useState<any[]>([]);
+  const [pendingFiles, setPendingFiles] = React.useState<File[]>([]);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -167,81 +174,99 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
     const filesToUpload = Array.from(e.target.files);
     if (e.target) e.target.value = '';
 
+    const codeMatch = projectName.match(/\b([A-Z]{3}\d{3})\b/i);
+    const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
+
     const { id: toastId, update, dismiss } = toast({
-      title: "Verificando Trello...",
-      description: `Comprobando ${filesToUpload.length} archivo(s) para evitar duplicados.`,
+      title: "Escaneando Drive...",
+      description: "Buscando archivos duplicados.",
       duration: Infinity,
     });
 
     try {
-      let currentAttachments: any[] = [];
-      if (cardId) {
-        currentAttachments = await getCardAttachments(cardId);
-      }
-      const existingNamesMap = new Map(currentAttachments.map(a => [a.fileName, a]));
-
-      const codeMatch = projectName.match(/\b([A-Z]{3}\d{3})\b/i);
-      const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
-
-      const newAssociatedFiles: AssociatedFile[] = [];
-      for (const file of filesToUpload) {
-        if (milestone.associatedFiles.some(af => af.name === file.name)) {
-          update({ id: toastId, title: "Archivo ya vinculado", description: `"${file.name}" ya forma parte de este hito.` });
-          continue;
-        }
-
-        update({ id: toastId, description: `Procesando "${file.name}"...` });
-
-        let fileId: string;
-        let fileUrl: string;
-        let trelloId: string | null = null;
-        let driveId: string | null = null;
-
-        const existingAtt = existingNamesMap.get(file.name);
-
-        if (existingAtt) {
-            update({ id: toastId, title: "Archivo reutilizado", description: `"${file.name}" ya existe en Trello.` });
-            fileId = existingAtt.id;
-            fileUrl = existingAtt.url;
-            trelloId = existingAtt.id;
-        } else {
-            const arrayBuffer = await file.arrayBuffer();
-            const base64Data = Buffer.from(arrayBuffer).toString('base64');
-
-            if (file.size < 10 * 1024 * 1024 && cardId) {
-                update({ id: toastId, title: "Subiendo a Trello...", description: file.name });
-                const trelloAtt = await uploadAttachmentToCard(cardId, file.name, base64Data);
-                if (!trelloAtt) throw new Error("Error en Trello");
-                fileId = trelloAtt.id;
-                fileUrl = trelloAtt.url;
-                trelloId = trelloAtt.id;
-            } else {
-                update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: file.name });
-                const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
-                fileId = driveResult.id;
-                fileUrl = driveResult.webViewLink;
-                driveId = driveResult.id;
-                
-                if (cardId) {
-                    update({ id: toastId, title: "Vinculando Drive con Trello...", description: file.name });
-                    const trelloAtt = await attachUrlToCard(cardId, file.name, driveResult.webViewLink);
-                    if (trelloAtt) trelloId = trelloAtt.id;
-                }
+        const folderId = await getOrCreateProjectFolder(projectCode);
+        const foundConflicts = [];
+        for (const file of filesToUpload) {
+            const existing = await findFileInFolder(folderId, file.name);
+            if (existing) {
+                foundConflicts.push({ name: file.name, existingId: existing.id });
             }
         }
 
-        const fileObj: AssociatedFile = {
-          id: fileId,
-          name: file.name,
+        dismiss(toastId);
+
+        if (foundConflicts.length > 0) {
+            setConflicts(foundConflicts);
+            setPendingFiles(filesToUpload);
+            setIsConflictDialogOpen(true);
+        } else {
+            executeFinalFileAdd(filesToUpload, folderId, {});
+        }
+    } catch (error: any) {
+        dismiss(toastId);
+        toast({ variant: "destructive", title: "Error en Drive", description: error.message });
+    }
+  };
+
+  const executeFinalFileAdd = async (files: File[], folderId: string, resolutions: Record<string, ConflictStrategy>) => {
+    if (!milestone) return;
+
+    const { id: toastId, update, dismiss } = toast({
+      title: "Subiendo archivos...",
+      description: "Iniciando proceso.",
+      duration: Infinity,
+    });
+
+    try {
+      const newAssociatedFiles: AssociatedFile[] = [];
+      for (const file of files) {
+        const strategy = resolutions[file.name] || 'rename';
+        if (strategy === 'omit') continue;
+
+        update({ id: toastId, description: `Procesando "${file.name}"...` });
+
+        const arrayBuffer = await file.arrayBuffer();
+        const base64Data = Buffer.from(arrayBuffer).toString('base64');
+        
+        let targetName = file.name;
+        let existingId = strategy === 'overwrite' ? conflicts.find(c => c.name === file.name)?.existingId : undefined;
+
+        if (strategy === 'rename') {
+             let counter = 1;
+             let nameParts = file.name.split('.');
+             let ext = nameParts.length > 1 ? `.${nameParts.pop()}` : '';
+             let baseName = nameParts.join('.');
+             
+             let currentTryName = file.name;
+             let alreadyExists = conflicts.some(c => c.name === currentTryName);
+             
+             while (alreadyExists) {
+                currentTryName = `${baseName} (${counter})${ext}`;
+                const check = await findFileInFolder(folderId, currentTryName);
+                if (!check) break;
+                counter++;
+             }
+             targetName = currentTryName;
+        }
+
+        const driveResult = await uploadFileToDrive(targetName, file.type, base64Data, folderId, existingId);
+        
+        update({ id: toastId, title: "Vinculando con Trello...", description: driveResult.name });
+        let trelloId: string | undefined = undefined;
+        if (cardId) {
+            const trelloAtt = await attachUrlToCard(cardId, driveResult.name, driveResult.webViewLink);
+            if (trelloAtt) trelloId = trelloAtt.id;
+        }
+
+        newAssociatedFiles.push({
+          id: driveResult.id,
+          name: driveResult.name,
           size: `${(file.size / 1024).toFixed(2)} KB`,
           type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
-          url: fileUrl,
-        };
-
-        if (trelloId) fileObj.trelloId = trelloId;
-        if (driveId) fileObj.driveId = driveId;
-
-        newAssociatedFiles.push(fileObj);
+          url: driveResult.webViewLink,
+          driveId: driveResult.id,
+          trelloId: trelloId
+        });
       }
 
       if (newAssociatedFiles.length > 0) {
@@ -253,12 +278,23 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
       }
 
       dismiss(toastId);
-      toast({ title: "Sincronización finalizada", description: "Archivos vinculados correctamente." });
+      toast({ title: "Archivos añadidos", description: "Sincronización finalizada correctamente." });
     } catch (error: any) {
       console.error("Error adding files:", error);
       dismiss(toastId);
       toast({ variant: "destructive", title: "Error al añadir archivos", description: error.message });
+    } finally {
+        setConflicts([]);
+        setPendingFiles([]);
     }
+  };
+
+  const handleConflictResolve = async (resolutions: Record<string, ConflictStrategy>) => {
+    setIsConflictDialogOpen(false);
+    const codeMatch = projectName.match(/\b([A-Z]{3}\d{3})\b/i);
+    const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
+    const folderId = await getOrCreateProjectFolder(projectCode);
+    executeFinalFileAdd(pendingFiles, folderId, resolutions);
   };
 
   const handleDeleteConfirmed = () => {
@@ -550,12 +586,12 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                     </DialogDescription>
                 </DialogHeader>
                 <div className="py-4">
-                    <Input
+                    <input
                         value={deleteConfirmation}
                         onChange={(e) => setDeleteConfirmation(e.target.value)}
                         onPaste={(e) => e.preventDefault()}
                         placeholder="Escribí aquí..."
-                        className="bg-white border-zinc-400 text-black focus:ring-destructive focus:border-destructive"
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 bg-white border-zinc-400 text-black focus:ring-destructive focus:border-destructive"
                         autoFocus
                     />
                 </div>
@@ -588,12 +624,12 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                     </DialogDescription>
                 </DialogHeader>
                 <div className="py-4">
-                    <Input
+                    <input
                         value={fileDeleteConfirmation}
                         onChange={(e) => setFileDeleteConfirmation(e.target.value)}
                         onPaste={(e) => e.preventDefault()}
                         placeholder="Escribí aquí..."
-                        className="bg-white border-zinc-400 text-black focus:ring-destructive focus:border-destructive"
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 bg-white border-zinc-400 text-black focus:ring-destructive focus:border-destructive"
                         autoFocus
                     />
                 </div>
@@ -612,6 +648,17 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+
+        <FileConflictDialog 
+            isOpen={isConflictDialogOpen}
+            conflicts={conflicts}
+            onResolve={handleConflictResolve}
+            onCancel={() => {
+                setIsConflictDialogOpen(false);
+                setConflicts([]);
+                setPendingFiles([]);
+            }}
+        />
     </div>
   );
 }

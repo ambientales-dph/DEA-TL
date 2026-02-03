@@ -25,7 +25,7 @@ import { useFirestore, useCollection } from '@/firebase';
 import { collection, doc, setDoc, addDoc, getDocs, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { uploadFileToDrive } from '@/services/google-drive';
+import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder } from '@/services/google-drive';
 import { Buffer } from 'buffer';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -34,6 +34,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
   } from '@/components/ui/tooltip';
+import { FileConflictDialog, type ConflictStrategy } from '@/components/file-conflict-dialog';
 
 function getTrelloObjectCreationDate(trelloId: string): Date {
     const timestampHex = trelloId.substring(0, 8);
@@ -54,6 +55,11 @@ function HomeContent() {
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
   const [uploadText, setUploadText] = React.useState('');
+
+  // Conflict state
+  const [isConflictDialogOpen, setIsConflictDialogOpen] = React.useState(false);
+  const [pendingUploadData, setPendingUploadData] = React.useState<any>(null);
+  const [conflicts, setConflicts] = React.useState<any[]>([]);
 
   const searchParams = useSearchParams();
   const cardIdParam = searchParams.get('cardId');
@@ -91,7 +97,7 @@ function HomeContent() {
         };
         fetchCard();
     }
-  }, [cardIdParam]);
+  }, [cardIdParam, selectedCard]);
 
   React.useEffect(() => {
     if (firestore && firestoreCategories && firestoreCategories.length === 0) {
@@ -322,86 +328,112 @@ function HomeContent() {
         return;
     }
 
-    setIsUploading(true);
-    setUploadProgress(0);
-
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find(c => c.id === categoryId);
-    if (!category) {
+    if (!category) return;
+
+    const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
+    const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
+
+    // Phase 1: Conflict Detection
+    if (files && files.length > 0) {
+        setIsUploading(true);
+        setUploadText("Verificando archivos en Drive...");
+        try {
+            const folderId = await getOrCreateProjectFolder(projectCode);
+            const foundConflicts = [];
+            for (const file of files) {
+                const existing = await findFileInFolder(folderId, file.name);
+                if (existing) {
+                    foundConflicts.push({ name: file.name, existingId: existing.id });
+                }
+            }
+
+            if (foundConflicts.length > 0) {
+                setConflicts(foundConflicts);
+                setPendingUploadData({ ...data, folderId });
+                setIsConflictDialogOpen(true);
+                return; // Wait for user choice
+            } else {
+                executeFinalUpload(data, folderId, {});
+            }
+        } catch (error: any) {
+            setIsUploading(false);
+            toast({ variant: "destructive", title: "Error al verificar Drive", description: error.message });
+        }
+    } else {
+        executeFinalUpload(data, null, {});
+    }
+  }, [categories, selectedCard, firestore, toast]);
+
+  const executeFinalUpload = async (data: any, folderId: string | null, resolutions: Record<string, ConflictStrategy>) => {
+    const { files, categoryId, name, description, occurredAt } = data;
+    const category = categories.find((c: any) => c.id === categoryId);
+    if (!category || !selectedCard || !firestore) {
         setIsUploading(false);
         return;
-    };
+    }
 
+    setIsUploading(true);
     const { id: toastId, update, dismiss } = toast({
-      title: "Verificando sincronización...",
+      title: "Iniciando carga...",
       description: "Por favor, espera.",
       duration: Infinity,
     });
 
     try {
-      const currentAttachments = await getCardAttachments(selectedCard.id);
-      const existingNamesMap = new Map(currentAttachments.map(a => [a.fileName, a]));
-
-      const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
-      const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
-
       const associatedFiles: AssociatedFile[] = [];
-      if (files && files.length > 0) {
+      if (files && files.length > 0 && folderId) {
         const totalFiles = files.length;
         for (const [index, file] of files.entries()) {
+          const strategy = resolutions[file.name] || 'rename';
+          if (strategy === 'omit') continue;
+
           const progressText = `Archivo ${index + 1} de ${totalFiles}: ${file.name}`;
           setUploadText(progressText);
           setUploadProgress(((index) / totalFiles) * 100);
           update({ id: toastId, description: progressText });
           
-          let fileId: string;
-          let fileUrl: string;
-          let trelloId: string | null = null;
-          let driveId: string | null = null;
-
-          const existingAtt = existingNamesMap.get(file.name);
-
-          if (existingAtt) {
-            update({ id: toastId, title: "Archivo ya existe en Trello", description: `Reutilizando ${file.name}` });
-            fileId = existingAtt.id;
-            fileUrl = existingAtt.url;
-            trelloId = existingAtt.id;
-          } else {
-            const arrayBuffer = await file.arrayBuffer();
-            const base64Data = Buffer.from(arrayBuffer).toString('base64');
-            
-            if (file.size < 10 * 1024 * 1024) {
-                update({ id: toastId, title: "Subiendo a Trello...", description: progressText });
-                const trelloAtt = await uploadAttachmentToCard(selectedCard.id, file.name, base64Data);
-                if (!trelloAtt) throw new Error("Error al subir a Trello");
-                fileId = trelloAtt.id;
-                fileUrl = trelloAtt.url;
-                trelloId = trelloAtt.id;
-            } else {
-                update({ id: toastId, title: "Archivo grande: Subiendo a Drive...", description: progressText });
-                const driveResult = await uploadFileToDrive(file.name, file.type, base64Data, projectCode);
-                fileId = driveResult.id;
-                fileUrl = driveResult.webViewLink;
-                driveId = driveResult.id;
-                
-                update({ id: toastId, title: "Vinculando Drive con Trello...", description: progressText });
-                const trelloAtt = await attachUrlToCard(selectedCard.id, file.name, driveResult.webViewLink);
-                if (trelloAtt) trelloId = trelloAtt.id;
-            }
-          }
+          const arrayBuffer = await file.arrayBuffer();
+          const base64Data = Buffer.from(arrayBuffer).toString('base64');
           
-          const fileObj: AssociatedFile = {
-            id: fileId,
-            name: file.name,
+          let targetName = file.name;
+          let existingId = strategy === 'overwrite' ? conflicts.find(c => c.name === file.name)?.existingId : undefined;
+
+          // If rename, find a unique name
+          if (strategy === 'rename') {
+             let counter = 1;
+             let nameParts = file.name.split('.');
+             let ext = nameParts.length > 1 ? `.${nameParts.pop()}` : '';
+             let baseName = nameParts.join('.');
+             
+             let currentTryName = file.name;
+             let alreadyExists = conflicts.some(c => c.name === currentTryName);
+             
+             while (alreadyExists) {
+                currentTryName = `${baseName} (${counter})${ext}`;
+                const check = await findFileInFolder(folderId, currentTryName);
+                if (!check) break;
+                counter++;
+             }
+             targetName = currentTryName;
+          }
+
+          const driveResult = await uploadFileToDrive(targetName, file.type, base64Data, folderId, existingId);
+          
+          update({ id: toastId, title: "Vinculando con Trello...", description: targetName });
+          const trelloAtt = await attachUrlToCard(selectedCard.id, driveResult.name, driveResult.webViewLink);
+          
+          associatedFiles.push({
+            id: driveResult.id,
+            name: driveResult.name,
             size: `${(file.size / 1024).toFixed(2)} KB`,
             type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : ['application/pdf', 'application/msword', 'text/plain'].some(t => file.type.includes(t)) ? 'document' : 'other',
-            url: fileUrl,
-          };
-
-          if (trelloId) fileObj.trelloId = trelloId;
-          if (driveId) fileObj.driveId = driveId;
-
-          associatedFiles.push(fileObj);
+            url: driveResult.webViewLink,
+            driveId: driveResult.id,
+            trelloId: trelloAtt?.id
+          });
+          
           setUploadProgress(((index + 1) / totalFiles) * 100);
         }
       }
@@ -426,19 +458,17 @@ function HomeContent() {
       };
 
       const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
-      addDoc(milestonesRef, newMilestoneData)
-        .catch((serverError) => {
+      addDoc(milestonesRef, newMilestoneData).catch((serverError) => {
             errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: milestonesRef.path,
                 operation: 'create',
                 requestResourceData: newMilestoneData
             }));
-        });
+      });
       
       setIsUploadOpen(false);
       dismiss(toastId);
-      toast({ title: "Hito creado", description: "Sincronización completada correctamente." });
-      
+      toast({ title: "Hito creado", description: "Archivos vinculados correctamente en Drive y Trello." });
     } catch (error: any) {
         console.error("Upload error:", error);
         dismiss(toastId);
@@ -447,8 +477,17 @@ function HomeContent() {
         setIsUploading(false);
         setUploadProgress(0);
         setUploadText('');
+        setConflicts([]);
+        setPendingUploadData(null);
     }
-  }, [categories, selectedCard, firestore, toast]);
+  };
+
+  const handleConflictResolve = (resolutions: Record<string, ConflictStrategy>) => {
+    setIsConflictDialogOpen(false);
+    if (pendingUploadData) {
+        executeFinalUpload(pendingUploadData, pendingUploadData.folderId, resolutions);
+    }
+  };
 
   const handleMilestoneUpdate = React.useCallback((updatedMilestone: Milestone) => {
     if (!firestore || !selectedCard) return;
@@ -496,6 +535,11 @@ function HomeContent() {
                 }
             } else if (hitoToDelete.tags?.includes('comentario')) {
                 await deleteAction(trelloObjectId);
+            }
+        } else {
+            // Manual milestone: clean Trello attachments if any
+            for (const file of hitoToDelete.associatedFiles) {
+                if (file.trelloId) await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
             }
         }
     } catch (e) {
@@ -792,6 +836,16 @@ function HomeContent() {
         uploadText={uploadText}
       />
       
+      <FileConflictDialog 
+        isOpen={isConflictDialogOpen}
+        conflicts={conflicts}
+        onResolve={handleConflictResolve}
+        onCancel={() => {
+            setIsConflictDialogOpen(false);
+            setIsUploading(false);
+        }}
+      />
+
       <TrelloSummary 
         isOpen={isTrelloSummaryOpen}
         onOpenChange={setIsTrelloSummaryOpen}
