@@ -18,7 +18,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Textarea } from './ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder, deleteFileFromDrive } from '@/services/google-drive';
-import { uploadAttachmentToCard, attachUrlToCard, getCardAttachments, deleteAttachmentFromCard } from '@/services/trello';
+import { attachUrlToCard, deleteAttachmentFromCard } from '@/services/trello';
 import { Buffer } from 'buffer';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
@@ -329,7 +329,6 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
         }
 
         // 2. Eliminar de Google Drive si existe el ID de Drive
-        // Usamos fileToRem.driveId o fileToRem.id ya que en las subidas manuales son el mismo
         const driveId = fileToRem.driveId || fileToRem.id;
         if (driveId) {
             update({ id: toastId, description: `Eliminando de Google Drive: ${fileToRem.name}` });

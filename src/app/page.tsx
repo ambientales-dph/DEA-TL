@@ -13,7 +13,7 @@ import { addMonths, endOfDay, parseISO, startOfDay, subMonths, subYears, format,
 import { es } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Loader2, Plus } from 'lucide-react';
-import { getCardAttachments, type TrelloCardBasic, getCardActions, uploadAttachmentToCard, attachUrlToCard, deleteAttachmentFromCard, deleteAction, getCardById } from '@/services/trello';
+import { getCardAttachments, type TrelloCardBasic, getCardActions, attachUrlToCard, deleteAttachmentFromCard, deleteAction, getCardById } from '@/services/trello';
 import { FileUpload } from '@/components/file-upload';
 import { MilestoneSummaryTable } from '@/components/milestone-summary-sheet';
 import { WelcomeScreen } from '@/components/welcome-screen';
@@ -25,7 +25,7 @@ import { useFirestore, useCollection } from '@/firebase';
 import { collection, doc, setDoc, addDoc, getDocs, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder } from '@/services/google-drive';
+import { uploadFileToDrive, getOrCreateProjectFolder, findFileInFolder, deleteFileFromDrive } from '@/services/google-drive';
 import { Buffer } from 'buffer';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -376,7 +376,7 @@ function HomeContent() {
 
     setIsUploading(true);
     const { id: toastId, update, dismiss } = toast({
-      title: "Iniciando carga...",
+      title: "Cargando archivos en Drive...",
       description: "Por favor, espera.",
       duration: Infinity,
     });
@@ -389,7 +389,7 @@ function HomeContent() {
           const strategy = resolutions[file.name] || 'rename';
           if (strategy === 'omit') continue;
 
-          const progressText = `Archivo ${index + 1} de ${totalFiles}: ${file.name}`;
+          const progressText = `Subiendo ${index + 1} de ${totalFiles}: ${file.name}`;
           setUploadText(progressText);
           setUploadProgress(((index) / totalFiles) * 100);
           update({ id: toastId, description: progressText });
@@ -526,24 +526,39 @@ function HomeContent() {
     const hitoToDelete = milestones?.find(m => m.id === milestoneId);
     if (!hitoToDelete) return;
 
+    const { id: toastId, update, dismiss } = toast({
+      title: "Eliminando hito y archivos...",
+      description: "Por favor, espera.",
+      duration: Infinity,
+    });
+
     try {
-        if (milestoneId.startsWith('hito-')) {
-            const trelloObjectId = milestoneId.replace('hito-', '');
-            if (hitoToDelete.associatedFiles.length > 0) {
-                for (const file of hitoToDelete.associatedFiles) {
-                    if (file.trelloId) await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
-                }
-            } else if (hitoToDelete.tags?.includes('comentario')) {
-                await deleteAction(trelloObjectId);
+        // Limpiar archivos en Trello y Google Drive
+        for (const file of hitoToDelete.associatedFiles) {
+            update({ id: toastId, description: `Eliminando ${file.name}...` });
+            
+            // Trello
+            if (file.trelloId) {
+                await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
             }
-        } else {
-            // Manual milestone: clean Trello attachments if any
-            for (const file of hitoToDelete.associatedFiles) {
-                if (file.trelloId) await deleteAttachmentFromCard(selectedCard.id, file.trelloId);
+            
+            // Google Drive
+            const driveId = file.driveId || (file.id && !file.trelloId ? file.id : null);
+            if (driveId) {
+                await deleteFileFromDrive(driveId);
             }
         }
+
+        // Si es un hito de comentario en Trello, borrar la acción
+        if (milestoneId.startsWith('hito-') && hitoToDelete.tags?.includes('comentario')) {
+            const trelloObjectId = milestoneId.replace('hito-', '');
+            await deleteAction(trelloObjectId);
+        }
+        
+        dismiss(toastId);
     } catch (e) {
-        console.warn("No se pudo eliminar el objeto de Trello, procediendo con Firestore.", e);
+        console.warn("Error en limpieza parcial de Trello/Drive, procediendo con Firestore.", e);
+        dismiss(toastId);
     }
 
     const milestoneRef = doc(firestore, 'projects', selectedCard.id, 'milestones', milestoneId);
@@ -641,7 +656,7 @@ function HomeContent() {
     deleteDoc(catRef)
         .catch(err => {
              errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: catRef.path,
+                path: 'categories',
                 operation: 'delete'
             }));
         });
