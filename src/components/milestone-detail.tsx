@@ -406,7 +406,7 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                 </div>
                  <div className="flex items-center text-xs text-zinc-700 mt-1.5">
                     <Clock className="h-3 w-3 mr-1.5" />
-                    <Popover modal={false}>
+                    <Popover>
                         <PopoverTrigger asChild>
                             <button className="hover:text-black transition-colors focus:outline-none underline decoration-dotted underline-offset-2 flex items-center gap-1">
                                 {format(parseISO(milestone.occurredAt), "PPP 'a las' p", { locale: es })}
@@ -414,8 +414,11 @@ export function MilestoneDetail({ milestone, categories, onMilestoneUpdate, onMi
                             </button>
                         </PopoverTrigger>
                         <PopoverContent 
-                          className="w-auto p-0 z-[120]" 
+                          className="w-auto p-0 z-[130]" 
                           align="start"
+                          onOpenAutoFocus={(e) => e.preventDefault()}
+                          onCloseAutoFocus={(e) => e.preventDefault()}
+                          onPointerDownOutside={(e) => e.preventDefault()}
                           onInteractOutside={(e) => e.preventDefault()}
                         >
                             <Calendar

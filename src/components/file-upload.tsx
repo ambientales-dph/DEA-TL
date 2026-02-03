@@ -157,7 +157,7 @@ export function FileUpload({
                     render={({ field }) => (
                         <FormItem className="flex flex-col space-y-1">
                         <FormLabel className="text-xs">Fecha</FormLabel>
-                        <Popover modal={false}>
+                        <Popover>
                             <PopoverTrigger asChild>
                             <FormControl>
                                 <Button
@@ -177,8 +177,11 @@ export function FileUpload({
                             </FormControl>
                             </PopoverTrigger>
                             <PopoverContent 
-                              className="w-auto p-0 z-[120]" 
+                              className="w-auto p-0 z-[130]" 
                               align="start"
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                              onCloseAutoFocus={(e) => e.preventDefault()}
+                              onPointerDownOutside={(e) => e.preventDefault()}
                               onInteractOutside={(e) => e.preventDefault()}
                             >
                             <Calendar
