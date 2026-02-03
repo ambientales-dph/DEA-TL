@@ -101,7 +101,7 @@ export function FileUpload({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px] bg-zinc-300 text-black p-4">
+      <DialogContent className="sm:max-w-[440px] bg-zinc-300 text-black p-4 overflow-visible">
         <DialogHeader className="space-y-1 mb-2">
           <DialogTitle className="font-headline text-lg">Cargar un nuevo hito</DialogTitle>
           <DialogDescription className="text-zinc-700 text-xs">
@@ -175,7 +175,7 @@ export function FileUpload({
                                 </Button>
                             </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
+                            <PopoverContent className="w-auto p-0 z-[110]" align="start">
                             <Calendar
                                 mode="single"
                                 selected={field.value}
@@ -187,6 +187,7 @@ export function FileUpload({
                                 captionLayout="dropdown"
                                 fromYear={1900}
                                 toYear={new Date().getFullYear()}
+                                locale={es}
                             />
                             </PopoverContent>
                         </Popover>
@@ -206,7 +207,7 @@ export function FileUpload({
                                 <SelectValue placeholder="Categoría" />
                             </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="z-[110]">
                             {categories.map(category => (
                                 <SelectItem key={category.id} value={category.id} className="text-xs">
                                 <div className="flex items-center">
