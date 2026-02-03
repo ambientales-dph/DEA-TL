@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -175,11 +176,13 @@ export function FileUpload({
                                 </Button>
                             </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0 z-[110]" align="start">
+                            <PopoverContent className="w-auto p-0 z-[120]" align="start">
                             <Calendar
                                 mode="single"
                                 selected={field.value}
-                                onSelect={field.onChange}
+                                onSelect={(date) => {
+                                  field.onChange(date);
+                                }}
                                 disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                                 }
