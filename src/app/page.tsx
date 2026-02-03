@@ -203,6 +203,8 @@ function HomeContent() {
             ]);
 
             const currentTrelloAttachmentIds = new Set(attachments.map(a => a.id));
+            const currentTrelloActionIds = new Set(actions.map(a => a.id));
+            
             const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
             const existingDocsSnapshot = await getDocs(milestonesRef);
             
@@ -299,7 +301,7 @@ function HomeContent() {
               .filter(id => {
                   const possibleId = id.replace('hito-', '');
                   if (id.includes('creacion')) return false;
-                  return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(id.replace('hito-', ''));
+                  return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(possibleId);
               });
 
             if (allTrelloItems.length > 0 || idsToRemove.length > 0 || hasChanges) {
