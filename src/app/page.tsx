@@ -84,7 +84,19 @@ function HomeContent() {
     return CATEGORIES;
   }, [firestoreCategories]);
 
+  // Manejo de carga de tarjeta desde URL
   React.useEffect(() => {
+    // Si no hay parámetro en la URL, limpiamos cualquier rastro de la tarjeta cargada por URL
+    if (!cardIdParam) {
+        if (cardFromUrl) {
+            setSelectedCard(null);
+            setCardFromUrl(null);
+            syncPerformedForCard.current = null;
+        }
+        return;
+    }
+
+    // Si hay un parámetro y es distinto a la tarjeta seleccionada actual, la cargamos
     if (cardIdParam && (!selectedCard || selectedCard.id !== cardIdParam)) {
         const fetchCard = async () => {
             try {
@@ -99,8 +111,9 @@ function HomeContent() {
         };
         fetchCard();
     }
-  }, [cardIdParam, selectedCard]);
+  }, [cardIdParam, selectedCard, cardFromUrl]);
 
+  // Seeding inicial de categorías
   React.useEffect(() => {
     if (firestore && firestoreCategories && firestoreCategories.length === 0) {
         const batch = writeBatch(firestore);
@@ -165,9 +178,12 @@ function HomeContent() {
     setSelectedMilestone(null);
     if (card) {
         router.replace(`${pathname}?cardId=${card.id}`);
+    } else {
+        router.replace(pathname);
     }
   }, [router, pathname]);
   
+  // Sincronización de Trello a Firestore
   React.useEffect(() => {
     const syncTrelloToFirestore = async () => {
         if (!selectedCard || !firestore || syncPerformedForCard.current === selectedCard.id) {
@@ -300,8 +316,8 @@ function HomeContent() {
               .filter(d => d.id.startsWith('hito-'))
               .map(d => d.id)
               .filter(id => {
-                  const possibleId = id.replace('hito-', '');
                   if (id.includes('creacion')) return false;
+                  const possibleId = id.replace('hito-', '');
                   return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(possibleId);
               });
 
@@ -596,6 +612,7 @@ function HomeContent() {
     setSelectedMilestone(null);
   }, []);
   
+  // Limpieza total de la aplicación al volver a Home
   const handleGoHome = React.useCallback(() => {
     setSelectedCard(null);
     setSelectedMilestone(null);
@@ -606,6 +623,7 @@ function HomeContent() {
     setView('timeline');
     setCardFromUrl(null);
     syncPerformedForCard.current = null;
+    // Eliminamos el parámetro de la URL
     router.replace(pathname);
   }, [router, pathname]);
 
