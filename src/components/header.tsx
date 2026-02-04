@@ -1,6 +1,8 @@
+
 import { Input } from './ui/input';
-import { Search, List, ExternalLink, Home, GanttChartSquare, Bot, GraduationCap } from 'lucide-react';
+import { Search, List, ExternalLink, Home, GanttChartSquare, GraduationCap } from 'lucide-react';
 import { Button } from './ui/button';
+import { Separator } from './ui/separator';
 import {
     Tooltip,
     TooltipContent,
@@ -17,7 +19,6 @@ interface HeaderProps {
   onGoHome: () => void;
   trelloCardUrl: string | null;
   isProjectLoaded: boolean;
-  onOpenAIAssistant: () => void;
   onSelectTrainingProject: () => void;
 }
 
@@ -30,7 +31,6 @@ export function Header({
   onGoHome, 
   trelloCardUrl, 
   isProjectLoaded, 
-  onOpenAIAssistant,
   onSelectTrainingProject
 }: HeaderProps) {
   
@@ -69,16 +69,6 @@ export function Header({
                     </TooltipTrigger>
                     <TooltipContent>
                         <p>{view === 'timeline' ? 'Ver resumen en tabla' : 'Ver línea de tiempo'}</p>
-                    </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button size="icon" variant="outline" onClick={onOpenAIAssistant} disabled={!isProjectLoaded}>
-                            <Bot className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>Asistente de IA (Importar tabla)</p>
                     </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -128,5 +118,3 @@ export function Header({
     </header>
   );
 }
-
-import { Separator } from './ui/separator';

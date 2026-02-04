@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -19,7 +20,6 @@ import { WelcomeScreen } from '@/components/welcome-screen';
 import { RSA060_MILESTONES } from '@/lib/rsa060-data';
 import { FeedbackButton } from '@/components/feedback-button';
 import { FeedbackDialog } from '@/components/feedback-dialog';
-import { AIAssistantDialog } from '@/components/ai-assistant-dialog';
 import { useFirestore, useCollection } from '@/firebase';
 import { collection, doc, setDoc, addDoc, getDocs, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -34,7 +34,6 @@ import {
     TooltipTrigger,
   } from '@/components/ui/tooltip';
 import { FileConflictDialog, type ConflictStrategy } from '@/components/file-conflict-dialog';
-import { type MilestoneExtractionOutput } from '@/ai/flows/process-milestones-flow';
 
 function getTrelloObjectCreationDate(trelloId: string): Date {
     const timestampHex = trelloId.substring(0, 8);
@@ -49,7 +48,6 @@ function HomeContent() {
   const [selectedCard, setSelectedCard] = React.useState<TrelloCardBasic | null>(null);
   const [isUploadOpen, setIsUploadOpen] = React.useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = React.useState(false);
-  const [isAIAssistantOpen, setIsAIAssistantOpen] = React.useState(false);
   const [view, setView] = React.useState<'timeline' | 'summary'>('timeline');
   const [cardFromUrl, setCardFromUrl] = React.useState<TrelloCardBasic | null>(null);
   const [isUploading, setIsUploading] = React.useState(false);
@@ -165,7 +163,10 @@ function HomeContent() {
   const handleCardSelect = React.useCallback(async (card: TrelloCardBasic | null) => {
     setSelectedCard(card);
     setSelectedMilestone(null);
-  }, []);
+    if (card) {
+        router.replace(`${pathname}?cardId=${card.id}`);
+    }
+  }, [router, pathname]);
   
   React.useEffect(() => {
     const syncTrelloToFirestore = async () => {
@@ -322,7 +323,7 @@ function HomeContent() {
     };
 
     syncTrelloToFirestore();
-  }, [selectedCard, firestore, categories, toast]);
+  }, [selectedCard, firestore, categories]);
 
 
   const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
@@ -711,43 +712,6 @@ function HomeContent() {
     });
   };
 
-  const handleAIConfirm = async (proposedMilestones: MilestoneExtractionOutput) => {
-    if (!firestore || !selectedCard) return;
-
-    const { id: toastId, dismiss } = toast({
-      title: "Importando hitos...",
-      description: `Procesando ${proposedMilestones.length} elementos.`,
-      duration: Infinity,
-    });
-
-    try {
-        const batch = writeBatch(firestore);
-        const milestonesRef = collection(firestore, 'projects', selectedCard.id, 'milestones');
-
-        proposedMilestones.forEach(ms => {
-            const category = categories.find(c => c.id === ms.categoryId) || categories[0];
-            const newDocRef = doc(milestonesRef);
-            batch.set(newDocRef, {
-                name: ms.name,
-                description: ms.description,
-                occurredAt: ms.occurredAt,
-                category: { id: category.id, name: category.name, color: category.color },
-                tags: [...ms.tags, 'ia-import'],
-                associatedFiles: [],
-                isImportant: false,
-                history: [`${format(new Date(), "PPpp", { locale: es })} - Importado mediante asistente de IA.`]
-            });
-        });
-
-        await batch.commit();
-        dismiss(toastId);
-        toast({ title: "Importación completada", description: `Se han añadido ${proposedMilestones.length} hitos correctamente.` });
-    } catch (error: any) {
-        dismiss(toastId);
-        toast({ variant: "destructive", title: "Error en la importación", description: error.message });
-    }
-  };
-
   React.useEffect(() => {
     if (displayedMilestones.length > 0) {
       const allDates = displayedMilestones.map(m => parseISO(m.occurredAt));
@@ -794,7 +758,6 @@ function HomeContent() {
           onGoHome={handleGoHome}
           trelloCardUrl={selectedCard?.url ?? null}
           isProjectLoaded={!!selectedCard}
-          onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
           onSelectTrainingProject={handleSelectTrainingProject}
         />
         <div className="flex-1 flex flex-col overflow-hidden relative">
@@ -903,13 +866,6 @@ function HomeContent() {
             setIsConflictDialogOpen(false);
             setIsUploading(false);
         }}
-      />
-
-      <AIAssistantDialog 
-        isOpen={isAIAssistantOpen}
-        onOpenChange={setIsAIAssistantOpen}
-        categories={categories}
-        onConfirm={handleAIConfirm}
       />
 
       <FeedbackButton onClick={() => setIsFeedbackOpen(true)} />
