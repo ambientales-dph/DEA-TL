@@ -86,13 +86,11 @@ function HomeContent() {
 
   // Manejo de carga de tarjeta desde URL
   React.useEffect(() => {
-    // Si no hay parámetro en la URL, limpiamos cualquier rastro de la tarjeta cargada por URL
+    // Si NO hay parámetro en la URL, limpiamos forzosamente todo el estado del proyecto
     if (!cardIdParam) {
-        if (cardFromUrl) {
-            setSelectedCard(null);
-            setCardFromUrl(null);
-            syncPerformedForCard.current = null;
-        }
+        setSelectedCard(null);
+        setCardFromUrl(null);
+        syncPerformedForCard.current = null;
         return;
     }
 
@@ -111,7 +109,7 @@ function HomeContent() {
         };
         fetchCard();
     }
-  }, [cardIdParam, selectedCard, cardFromUrl]);
+  }, [cardIdParam, selectedCard]);
 
   // Seeding inicial de categorías
   React.useEffect(() => {
@@ -177,9 +175,9 @@ function HomeContent() {
     setSelectedCard(card);
     setSelectedMilestone(null);
     if (card) {
-        router.replace(`${pathname}?cardId=${card.id}`);
+        router.push(`${pathname}?cardId=${card.id}`);
     } else {
-        router.replace(pathname);
+        router.push(pathname);
     }
   }, [router, pathname]);
   
@@ -318,6 +316,7 @@ function HomeContent() {
               .filter(id => {
                   if (id.includes('creacion')) return false;
                   const possibleId = id.replace('hito-', '');
+                  // Corregimos la referencia a currentTrelloActionIds que ahora está en el mismo ámbito
                   return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(possibleId);
               });
 
@@ -614,6 +613,10 @@ function HomeContent() {
   
   // Limpieza total de la aplicación al volver a Home
   const handleGoHome = React.useCallback(() => {
+    // 1. LIMPIEZA ABSOLUTA DE LA URL
+    router.push(pathname);
+    
+    // 2. REINICIO DE ESTADOS LOCALES
     setSelectedCard(null);
     setSelectedMilestone(null);
     setSearchTerm('');
@@ -623,8 +626,6 @@ function HomeContent() {
     setView('timeline');
     setCardFromUrl(null);
     syncPerformedForCard.current = null;
-    // Eliminamos el parámetro de la URL
-    router.replace(pathname);
   }, [router, pathname]);
 
   const handleCategoryColorChange = React.useCallback((categoryId: string, color: string) => {
