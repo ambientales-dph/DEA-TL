@@ -84,17 +84,15 @@ function HomeContent() {
     return CATEGORIES;
   }, [firestoreCategories]);
 
-  // Manejo de carga de tarjeta desde URL
+  // Manejo de carga de tarjeta desde URL: Lógica centralizada de limpieza
   React.useEffect(() => {
-    // Si NO hay parámetro en la URL, limpiamos forzosamente todo el estado del proyecto
     if (!cardIdParam) {
-        setSelectedCard(null);
-        setCardFromUrl(null);
+        if (selectedCard !== null) setSelectedCard(null);
+        if (cardFromUrl !== null) setCardFromUrl(null);
         syncPerformedForCard.current = null;
         return;
     }
 
-    // Si hay un parámetro y es distinto a la tarjeta seleccionada actual, la cargamos
     if (cardIdParam && (!selectedCard || selectedCard.id !== cardIdParam)) {
         const fetchCard = async () => {
             try {
@@ -109,7 +107,7 @@ function HomeContent() {
         };
         fetchCard();
     }
-  }, [cardIdParam, selectedCard]);
+  }, [cardIdParam]); // Solo reaccionamos al cambio en el parámetro de la URL
 
   // Seeding inicial de categorías
   React.useEffect(() => {
@@ -316,7 +314,6 @@ function HomeContent() {
               .filter(id => {
                   if (id.includes('creacion')) return false;
                   const possibleId = id.replace('hito-', '');
-                  // Corregimos la referencia a currentTrelloActionIds que ahora está en el mismo ámbito
                   return !currentTrelloAttachmentIds.has(possibleId) && !currentTrelloActionIds.has(possibleId);
               });
 
@@ -611,20 +608,20 @@ function HomeContent() {
     setSelectedMilestone(null);
   }, []);
   
-  // Limpieza total de la aplicación al volver a Home
+  // Limpieza total y forzosa al presionar la casa
   const handleGoHome = React.useCallback(() => {
-    // 1. LIMPIEZA ABSOLUTA DE LA URL
+    // 1. LIMPIEZA ABSOLUTA DE LA URL USANDO EL ROUTER DE NEXT
     router.push(pathname);
     
-    // 2. REINICIO DE ESTADOS LOCALES
+    // 2. REINICIO INMEDIATO DE ESTADOS LOCALES
     setSelectedCard(null);
     setSelectedMilestone(null);
+    setCardFromUrl(null);
     setSearchTerm('');
     setSelectedBoard('');
     setSelectedList('');
     setCardSearchTerm('');
     setView('timeline');
-    setCardFromUrl(null);
     syncPerformedForCard.current = null;
   }, [router, pathname]);
 
