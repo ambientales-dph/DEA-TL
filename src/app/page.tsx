@@ -83,7 +83,7 @@ function HomeContent() {
     return CATEGORIES;
   }, [firestoreCategories]);
 
-  // Manejo de carga de tarjeta desde URL: Lógica centralizada de limpieza
+  // Manejo de carga de tarjeta desde URL
   React.useEffect(() => {
     if (!cardIdParam) {
         if (selectedCard !== null) setSelectedCard(null);
@@ -337,52 +337,7 @@ function HomeContent() {
   }, [selectedCard, firestore, categories]);
 
 
-  const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
-    if (!firestore || !selectedCard) return;
-
-    if (selectedCard.id === 'training-rsa999') {
-        toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para el proyecto de entrenamiento." });
-        return;
-    }
-
-    const { files, categoryId, name, description, occurredAt } = data;
-    const category = categories.find(c => c.id === categoryId);
-    if (!category) return;
-
-    const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
-    const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
-
-    if (files && files.length > 0) {
-        setIsUploading(true);
-        setUploadText("Verificando archivos en Drive...");
-        try {
-            const folderId = await getOrCreateProjectFolder(projectCode);
-            const foundConflicts = [];
-            for (const file of files) {
-                const existing = await findFileInFolder(folderId, file.name);
-                if (existing) {
-                    foundConflicts.push({ name: file.name, existingId: existing.id });
-                }
-            }
-
-            if (foundConflicts.length > 0) {
-                setConflicts(foundConflicts);
-                setPendingUploadData({ ...data, folderId });
-                setIsConflictDialogOpen(true);
-                return;
-            } else {
-                executeFinalUpload(data, folderId, {});
-            }
-        } catch (error: any) {
-            setIsUploading(false);
-            toast({ variant: "destructive", title: "Error al verificar Drive", description: error.message });
-        }
-    } else {
-        executeFinalUpload(data, null, {});
-    }
-  }, [categories, selectedCard, firestore, toast]);
-
-  const executeFinalUpload = async (data: any, folderId: string | null, resolutions: Record<string, ConflictStrategy>) => {
+  const executeFinalUpload = React.useCallback(async (data: any, folderId: string | null, resolutions: Record<string, ConflictStrategy>) => {
     const { files, categoryId, name, description, occurredAt } = data;
     const category = categories.find((c: any) => c.id === categoryId);
     if (!category || !selectedCard || !firestore) {
@@ -454,17 +409,24 @@ function HomeContent() {
       }
       
       // Calculate final time: 7 AM local + 10 mins spacing for multiple milestones on the same day
-      const occurredAtDate = new Date(occurredAt);
-      const dayMilestones = (milestones || []).filter(m => isSameDay(parseISO(m.occurredAt), occurredAtDate));
+      const targetDate = new Date(occurredAt);
+      targetDate.setHours(0, 0, 0, 0);
+
+      // Filter existing milestones that are on the same calendar day (local time)
+      const dayMilestones = (milestones || []).filter(m => {
+        const mDate = parseISO(m.occurredAt);
+        return isSameDay(mDate, targetDate);
+      });
       
-      const finalDate = new Date(occurredAtDate);
+      const finalDate = new Date(targetDate);
       if (dayMilestones.length > 0) {
-        // Find the "latest" milestone of that day to add 10 minutes
-        const minutes = dayMilestones.map(m => {
+        // Find the "latest" milestone of that day (in terms of local time) to add 10 minutes
+        const minutesArray = dayMilestones.map(m => {
             const d = parseISO(m.occurredAt);
             return d.getHours() * 60 + d.getMinutes();
         });
-        const maxMins = Math.max(...minutes);
+        const maxMins = Math.max(...minutesArray);
+        // Start at 7:00 (420 mins) or maxMins + 10, whichever is later
         const nextMins = Math.max(7 * 60, maxMins + 10);
         finalDate.setHours(Math.floor(nextMins / 60), nextMins % 60, 0, 0);
       } else {
@@ -505,7 +467,52 @@ function HomeContent() {
         setConflicts([]);
         setPendingUploadData(null);
     }
-  };
+  }, [categories, selectedCard, firestore, toast, milestones, conflicts]);
+
+  const handleUpload = React.useCallback(async (data: { files?: File[], categoryId: string, name: string, description: string, occurredAt: Date }) => {
+    if (!firestore || !selectedCard) return;
+
+    if (selectedCard.id === 'training-rsa999') {
+        toast({ variant: "destructive", title: "Acción no permitida", description: "No se pueden crear hitos para el proyecto de entrenamiento." });
+        return;
+    }
+
+    const { files, categoryId } = data;
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return;
+
+    const codeMatch = selectedCard.name.match(/\b([A-Z]{3}\d{3})\b/i);
+    const projectCode = codeMatch ? codeMatch[0].toUpperCase() : null;
+
+    if (files && files.length > 0) {
+        setIsUploading(true);
+        setUploadText("Verificando archivos en Drive...");
+        try {
+            const folderId = await getOrCreateProjectFolder(projectCode);
+            const foundConflicts = [];
+            for (const file of files) {
+                const existing = await findFileInFolder(folderId, file.name);
+                if (existing) {
+                    foundConflicts.push({ name: file.name, existingId: existing.id });
+                }
+            }
+
+            if (foundConflicts.length > 0) {
+                setConflicts(foundConflicts);
+                setPendingUploadData({ ...data, folderId });
+                setIsConflictDialogOpen(true);
+                return;
+            } else {
+                executeFinalUpload(data, folderId, {});
+            }
+        } catch (error: any) {
+            setIsUploading(false);
+            toast({ variant: "destructive", title: "Error al verificar Drive", description: error.message });
+        }
+    } else {
+        executeFinalUpload(data, null, {});
+    }
+  }, [categories, selectedCard, firestore, toast, executeFinalUpload]);
 
   const handleConflictResolve = (resolutions: Record<string, ConflictStrategy>) => {
     setIsConflictDialogOpen(false);

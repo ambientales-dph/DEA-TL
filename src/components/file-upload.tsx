@@ -202,7 +202,7 @@ export function FileUpload({
                                           <SelectValue placeholder="Categoría" />
                                       </SelectTrigger>
                                       </FormControl>
-                                      <SelectContent className="max-h-[200px]">
+                                      <SelectContent className="max-h-[200px]" position="popper" sideOffset={5}>
                                       {categories.map(category => (
                                           <SelectItem key={category.id} value={category.id} className="text-xs">
                                           <div className="flex items-center">
