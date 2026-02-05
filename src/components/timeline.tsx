@@ -19,13 +19,12 @@ import {
   differenceInDays,
   eachDayOfInterval,
   eachHourOfInterval,
-  startOfMonth,
-  endOfMonth
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Skeleton } from './ui/skeleton';
 import { cn } from '@/lib/utils';
 import { Star } from 'lucide-react';
+import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 
 interface TimelineProps {
   milestones: Milestone[];
@@ -36,9 +35,9 @@ interface TimelineProps {
 
 interface DateMarker {
     date: Date;
-    label: string; // For hours or month/year
-    dayLabel?: string; // For day number
-    monthLabel?: string; // For month name
+    label: string; 
+    dayLabel?: string; 
+    monthLabel?: string; 
     position: number;
 }
 
@@ -63,11 +62,35 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     setViewRange({ start: startDate, end: endDate });
   }, [startDate, endDate]);
 
+  // Cálculo de la curva de actividad
+  const activityData = React.useMemo(() => {
+    if (!viewRange.start || !viewRange.end || milestones.length === 0) return [];
+    
+    const startTime = viewRange.start.getTime();
+    const endTime = viewRange.end.getTime();
+    const duration = endTime - startTime;
+    const bucketCount = 80; // Resolución de la curva
+    const bucketSize = duration / bucketCount;
+    
+    return Array.from({ length: bucketCount + 1 }).map((_, i) => {
+      const bucketStart = startTime + i * bucketSize;
+      const bucketEnd = bucketStart + bucketSize;
+      
+      const count = milestones.filter(m => {
+        const t = parseISO(m.occurredAt).getTime();
+        return t >= bucketStart && t < bucketEnd;
+      }).length;
+      
+      return {
+        time: bucketStart,
+        count: count,
+      };
+    });
+  }, [milestones, viewRange]);
+
   React.useEffect(() => {
     const currentMilestoneIds = milestones.map(m => m.id).sort().join(',');
 
-    // Only recalculate heights if the set of milestone IDs has changed.
-    // This prevents re-calculation when only metadata (like tags) is updated.
     if (currentMilestoneIds !== prevMilestoneIdsRef.current) {
       prevMilestoneIdsRef.current = currentMilestoneIds;
 
@@ -154,7 +177,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 2 && e.button !== 1) return; // Only right or middle click
+    if (e.button !== 2 && e.button !== 1) return; 
     e.preventDefault();
     setIsPanning(true);
     panStartRef.current = {
@@ -218,7 +241,6 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
       let centralMonthLabel: string | undefined = undefined;
   
       if (durationInDays <= 1) {
-        // Show hours (every 2 hours)
         const rawHourMarkers = eachHourOfInterval({ start: timelineStart, end: timelineEnd });
         dateMarkers = rawHourMarkers
           .filter((_, index) => index % 2 === 0)
@@ -227,28 +249,25 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
             label: format(hourDate, 'HH:mm'),
           }));
       } else if (durationInMonths < 1) {
-        // Show days with a single month label
         const rawDayMarkers = eachDayOfInterval({ start: timelineStart, end: timelineEnd });
         dateMarkers = rawDayMarkers.map(dayDate => ({
             date: dayDate,
-            label: '', // Not used in this view
+            label: '',
             dayLabel: format(dayDate, 'd'),
-            monthLabel: '', // This is handled by centralMonthLabel now
+            monthLabel: '',
         }));
         
-        // Determine the central month label
         const middleDate = new Date(timelineStart.getTime() + (timelineEnd.getTime() - timelineStart.getTime()) / 2);
         centralMonthLabel = format(middleDate, 'MMMM yyyy', { locale: es });
       } else {
-        // Show months (default behavior)
         const durationInYears = durationInMonths / 12;
         const rawMonthMarkersSource = eachMonthOfInterval({ start: timelineStart, end: timelineEnd });
   
         let filteredMonths: Date[];
         if (durationInYears >= 2) {
-          filteredMonths = rawMonthMarkersSource.filter(date => getMonth(date) % 6 === 0); // Ene, Jul
+          filteredMonths = rawMonthMarkersSource.filter(date => getMonth(date) % 6 === 0);
         } else if (durationInYears >= 1) {
-          filteredMonths = rawMonthMarkersSource.filter(date => getMonth(date) % 3 === 0); // Ene, Abr, Jul, Oct
+          filteredMonths = rawMonthMarkersSource.filter(date => getMonth(date) % 3 === 0);
         } else {
             filteredMonths = rawMonthMarkersSource;
         }
@@ -301,7 +320,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
       <div className="flex flex-col items-center justify-center h-full text-center">
         <h2 className="text-2xl font-semibold font-headline">Bienvenido a DEAS TL</h2>
         <p className="mt-2 text-muted-foreground">
-          Arrastra y suelta un archivo para empezar o usa el botón de subir.
+          Cargá un proyecto de Trello para empezar.
         </p>
       </div>
     );
@@ -353,13 +372,35 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
       <div 
         className="relative h-full w-full"
       >
-        <div className="absolute bottom-7 left-0 right-0 h-px bg-gray-400" />
+        {/* Gráfica de actividad en segundo plano */}
+        <div className="absolute inset-x-0 bottom-7 h-32 z-0 pointer-events-none opacity-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={activityData}>
+              <defs>
+                <linearGradient id="colorActivity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#888888" stopOpacity={0.4}/>
+                  <stop offset="95%" stopColor="#888888" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <Area 
+                type="monotone" 
+                dataKey="count" 
+                stroke="#888888" 
+                strokeWidth={1} 
+                fill="url(#colorActivity)" 
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="absolute bottom-7 left-0 right-0 h-px bg-gray-400 z-10" />
 
         {markers.map(({ label, dayLabel, monthLabel, position }, index) => (
           position >= 0 && position <= 100 && (
             <div
               key={label + position + index}
-              className="absolute -bottom-0.5 flex flex-col items-center"
+              className="absolute -bottom-0.5 flex flex-col items-center z-10"
               style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
             >
               <div className="h-2 w-px bg-gray-400" />
@@ -375,7 +416,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
         ))}
 
         {centralMonthLabel && (
-            <div className="absolute bottom-[-50px] w-full text-center">
+            <div className="absolute bottom-[-50px] w-full text-center z-10">
                 <span className="text-lg font-bold text-muted-foreground/50 capitalize">
                     {centralMonthLabel}
                 </span>
@@ -395,7 +436,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
                 key={milestone.id}
                 className={cn(
                   "absolute bottom-7 flex flex-col items-center",
-                  activeMilestoneId === milestone.id && 'z-20'
+                  activeMilestoneId === milestone.id ? 'z-30' : 'z-20'
                 )}
                 style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
               >
@@ -440,5 +481,3 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     </div>
   );
 }
-
-    
