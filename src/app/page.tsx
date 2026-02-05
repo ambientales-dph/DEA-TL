@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -107,7 +106,7 @@ function HomeContent() {
         };
         fetchCard();
     }
-  }, [cardIdParam]); // Solo reaccionamos al cambio en el parámetro de la URL
+  }, [cardIdParam]);
 
   // Seeding inicial de categorías
   React.useEffect(() => {
@@ -454,10 +453,20 @@ function HomeContent() {
         }
       }
       
-      const now = new Date();
-      const finalDate = new Date(occurredAt);
-      if (isSameDay(finalDate, now)) {
-        finalDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      // Calculate final time: 7 AM local + 10 mins spacing for multiple milestones on the same day
+      const occurredAtDate = new Date(occurredAt);
+      const dayMilestones = (milestones || []).filter(m => isSameDay(parseISO(m.occurredAt), occurredAtDate));
+      
+      const finalDate = new Date(occurredAtDate);
+      if (dayMilestones.length > 0) {
+        // Find the "latest" milestone of that day to add 10 minutes
+        const minutes = dayMilestones.map(m => {
+            const d = parseISO(m.occurredAt);
+            return d.getHours() * 60 + d.getMinutes();
+        });
+        const maxMins = Math.max(...minutes);
+        const nextMins = Math.max(7 * 60, maxMins + 10);
+        finalDate.setHours(Math.floor(nextMins / 60), nextMins % 60, 0, 0);
       } else {
         finalDate.setHours(7, 0, 0, 0);
       }
@@ -608,12 +617,8 @@ function HomeContent() {
     setSelectedMilestone(null);
   }, []);
   
-  // Limpieza total y forzosa al presionar la casa
   const handleGoHome = React.useCallback(() => {
-    // 1. LIMPIEZA ABSOLUTA DE LA URL USANDO EL ROUTER DE NEXT
     router.push(pathname);
-    
-    // 2. REINICIO INMEDIATO DE ESTADOS LOCALES
     setSelectedCard(null);
     setSelectedMilestone(null);
     setCardFromUrl(null);
