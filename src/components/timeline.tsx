@@ -71,7 +71,9 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     const startTime = viewRange.start.getTime();
     const endTime = viewRange.end.getTime();
     const duration = endTime - startTime;
-    const bucketCount = 120; // Mayor resolución para mejor alineación
+    
+    // Reducimos la resolución de 120 a 40 para que las curvas se estiren más en horizontal
+    const bucketCount = 40; 
     const bucketSize = duration / bucketCount;
     
     return Array.from({ length: bucketCount + 1 }).map((_, i) => {
