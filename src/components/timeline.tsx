@@ -64,7 +64,11 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     setViewRange({ start: startDate, end: endDate });
   }, [startDate, endDate]);
 
-  // Cálculo de la curva de actividad
+  /**
+   * Cálculo de la curva de actividad mediante Estimación de Densidad por Kernel (KDE).
+   * Cada hito aporta una influencia gaussiana que se suma a las demás,
+   * creando picos suaves y sumatorios que evitan las mesetas.
+   */
   const activityData = React.useMemo(() => {
     if (!viewRange.start || !viewRange.end || milestones.length === 0) return [];
     
@@ -72,24 +76,29 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     const endTime = viewRange.end.getTime();
     const duration = endTime - startTime;
     
-    // Reducimos la resolución de 120 a 40 para que las curvas se estiren más en horizontal
-    const bucketCount = 40; 
-    const bucketSize = duration / bucketCount;
+    // Resolución alta para una curva ultra suave
+    const pointsCount = 150; 
+    // Sigma controla el "estiramiento" horizontal de la base de cada hito
+    const sigma = duration / 50; 
     
-    return Array.from({ length: bucketCount + 1 }).map((_, i) => {
-      const bucketStart = startTime + i * bucketSize;
-      const bucketEnd = bucketStart + bucketSize;
-      // Usamos el centro del bucket para alinear el pico con el hito
-      const bucketCenter = bucketStart + (bucketSize / 2);
+    return Array.from({ length: pointsCount + 1 }).map((_, i) => {
+      const pointTime = startTime + (i * duration / pointsCount);
       
-      const count = milestones.filter(m => {
-        const t = parseISO(m.occurredAt).getTime();
-        return t >= bucketStart && t < bucketEnd;
-      }).length;
+      let sum = 0;
+      milestones.forEach(m => {
+        const mTime = parseISO(m.occurredAt).getTime();
+        const diff = pointTime - mTime;
+        
+        // Solo calculamos para hitos dentro de un rango de influencia razonable para performance
+        if (Math.abs(diff) < sigma * 4) {
+           // Función Gaussiana: e^(-x^2 / 2sigma^2)
+           sum += Math.exp(-Math.pow(diff, 2) / (2 * Math.pow(sigma, 2)));
+        }
+      });
       
       return {
-        time: bucketCenter,
-        count: count,
+        time: pointTime,
+        count: sum,
       };
     });
   }, [milestones, viewRange]);
@@ -382,7 +391,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
       <div 
         className="relative h-full w-full"
       >
-        {/* Gráfica de actividad en segundo plano */}
+        {/* Gráfica de actividad en segundo plano (KDE) */}
         <div className="absolute inset-x-0 bottom-7 h-32 z-0 pointer-events-none opacity-40">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={activityData} margin={{ left: 0, right: 0, top: 0, bottom: 0 }}>
