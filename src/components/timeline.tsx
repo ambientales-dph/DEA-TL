@@ -24,7 +24,7 @@ import { es } from 'date-fns/locale';
 import { Skeleton } from './ui/skeleton';
 import { cn } from '@/lib/utils';
 import { Star } from 'lucide-react';
-import { Area, AreaChart, ResponsiveContainer } from 'recharts';
+import { Area, AreaChart, ResponsiveContainer, XAxis } from 'recharts';
 
 interface TimelineProps {
   milestones: Milestone[];
@@ -46,6 +46,8 @@ interface TimelineData {
   filePositions: Map<string, number>;
   visibleMilestones: Milestone[];
   centralMonthLabel?: string;
+  startTime: number;
+  endTime: number;
 }
 
 export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: TimelineProps) {
@@ -69,12 +71,14 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     const startTime = viewRange.start.getTime();
     const endTime = viewRange.end.getTime();
     const duration = endTime - startTime;
-    const bucketCount = 80; // Resolución de la curva
+    const bucketCount = 120; // Mayor resolución para mejor alineación
     const bucketSize = duration / bucketCount;
     
     return Array.from({ length: bucketCount + 1 }).map((_, i) => {
       const bucketStart = startTime + i * bucketSize;
       const bucketEnd = bucketStart + bucketSize;
+      // Usamos el centro del bucket para alinear el pico con el hito
+      const bucketCenter = bucketStart + (bucketSize / 2);
       
       const count = milestones.filter(m => {
         const t = parseISO(m.occurredAt).getTime();
@@ -82,7 +86,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
       }).length;
       
       return {
-        time: bucketStart,
+        time: bucketCenter,
         count: count,
       };
     });
@@ -304,12 +308,16 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
         filePositions,
         visibleMilestones,
         centralMonthLabel,
+        startTime: timelineStart.getTime(),
+        endTime: timelineEnd.getTime()
       });
     } else {
       setTimelineData({
         markers: [],
         filePositions: new Map(),
         visibleMilestones: [],
+        startTime: 0,
+        endTime: 0
       });
     }
   }, [milestones, viewRange]);
@@ -339,7 +347,7 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
     );
   }
 
-  const { markers, filePositions, visibleMilestones, centralMonthLabel } = timelineData;
+  const { markers, filePositions, visibleMilestones, centralMonthLabel, startTime, endTime } = timelineData;
   
   const milestonesInView = visibleMilestones.filter(milestone => {
     const pos = filePositions.get(milestone.id);
@@ -375,13 +383,20 @@ export function Timeline({ milestones, startDate, endDate, onMilestoneClick }: T
         {/* Gráfica de actividad en segundo plano */}
         <div className="absolute inset-x-0 bottom-7 h-32 z-0 pointer-events-none opacity-40">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={activityData}>
+            <AreaChart data={activityData} margin={{ left: 0, right: 0, top: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorActivity" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#888888" stopOpacity={0.4}/>
                   <stop offset="95%" stopColor="#888888" stopOpacity={0}/>
                 </linearGradient>
               </defs>
+              <XAxis 
+                dataKey="time" 
+                hide 
+                type="number" 
+                domain={[startTime, endTime]} 
+                padding={{ left: 0, right: 0 }}
+              />
               <Area 
                 type="monotone" 
                 dataKey="count" 
